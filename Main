@@ -1,0 +1,2672 @@
+#import de toutes les librairies utiliser 
+import sys
+import math
+from PyQt5.QtWidgets import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from random import *
+import time 
+import RPi.GPIO as GPIO
+import smbus
+import board
+import neopixel
+import pygame
+import random
+import threading
+
+# met toutes les variables utiliser en variables globales
+global cocktail, liste_pourcentage, text_a, text_b, text_c, text_d, text_e, text_f, text_g, text_h, text_i, text_j, text_k, text_l, text_m, text_n, text_o, liste_nom, liste_dosage, taille_grand_verre, taille_petit_verre, pompe_number, number_player, count, temps, arduino_adress_Beebuzzed, arduino_adress_BeeArtsy
+
+# initialisation des broches dans un dictionnaire
+BROCHES_POMPES = {"pompe1": 17, "pompe2": 27, "pompe3": 22, "pompe4": 10,
+                  "pompe5": 9, "pompe6": 11, "pompe7": 5, "pompe8": 6,
+                  "pompe9": 26, "pompe10": 23, "pompe11": 24, "pompe12": 25,
+                  "pompe13": 8, "pompe14": 7, "pompe15": 4, "pompe16": 19}
+
+# initialisation des pompes 
+GPIO.setmode(GPIO.BCM)
+
+for key, value in BROCHES_POMPES.items():
+    GPIO.setup(value, GPIO.OUT)
+    GPIO.output(value, 0) # met toutes les pompes à LOW
+    
+# initialisation de la listes pour mettre les alcools
+liste_nom = ["","","","","","","","","","","","","","","",""]
+
+#initialisation de la listes pour les dosages
+liste_dosage = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+liste_pourcentage = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+
+# initialisation temps broches 
+temps = 0
+cocktail = 0
+#initialisation des adresses arduinos pour les add-ons
+arduino_adress_Beebuzzed = 0x49
+arduino_adress_BeeArtsy = 0x51
+ino_add1 = 0x50
+
+# initialisation taille des verres
+taille_grand_verre = taille_petit_verre = 0
+
+#nombre de joueur pour BeeBuzz
+number_player = 0
+count = 0
+
+# initialisation text alcool (a-h) text diluant (i-p)
+text_a = text_b = text_c = text_d = text_e = text_f = text_g = text_h = text_i = text_j = text_k = text_l = text_m = text_n = text_o = text_p = ""
+    
+class HexagonLabel(QLabel):
+    # Define the clicked signal
+    clicked = pyqtSignal()
+    
+    def mousePressEvent(self, event):
+        # Emit the clicked signal when the label is clicked
+        self.clicked.emit()
+        
+    def __init__(self, parent=None):
+        # Constructeur de la classe HexagonLabel qui prend en paramètre la classe parent
+        super(HexagonLabel, self).__init__(parent)
+        
+        # Définition de la taille minimum et maximum de l'objet QLabel
+        self.setMinimumSize(80, 80)
+        self.setMaximumSize(80, 80)
+        
+        # Initialisation de la variable slider_name à une chaîne de caractères vide
+        self.slider_name = ""
+        
+    def paintEvent(self, event):
+        # Redéfinition de la méthode paintEvent de la classe QLabel
+        
+        # Initialisation de l'objet QPainter avec l'objet self en paramètre
+        painter = QPainter(self)
+        
+        # Activation de l'antialiasing pour un rendu plus lisse
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Définition de la couleur de la bordure
+        painter.setPen(self.palette().color(QPalette.Shadow))
+        
+        # Définition de la couleur de remplissage
+        painter.setBrush(QColor(255, 255, 0))
+        
+        # Création d'une liste de points pour dessiner un hexagone régulier centré dans l'objet QLabel
+        points = QPolygon([
+            self.rect().center() + QPoint(-40, 0),
+            self.rect().center() + QPoint(-20, -35),
+            self.rect().center() + QPoint(20, -35),
+            self.rect().center() + QPoint(40, 0),
+            self.rect().center() + QPoint(20, 35),
+            self.rect().center() + QPoint(-20, 35),
+        ])
+        
+        # Dessin de l'hexagone à partir des points définis
+        painter.drawPolygon(points)
+        
+        # Ajout de texte à l'objet QLabel
+        painter.setPen(QColor(0, 0, 0))
+        painter.drawText(self.rect(), Qt.AlignCenter, self.slider_name)
+
+class EasterEgg(QPushButton):
+    # Constructeur de la classe EasterEgg
+    def __init__(self):
+        super().__init__()
+        
+        # Définition de la géométrie de l'objet QPushButton
+        self.setGeometry(0, -5, 500, 150)
+        
+        # Définition du style de fond de l'objet QPushButton
+        self.setStyleSheet("background-color: #63666A;")
+        
+        # Définition des dimensions de la zone de jeu
+        self.canvas_width = 350
+        self.canvas_height = 200
+        
+        # Initialisation du score à 0
+        self.score = 0
+    
+        # Création de la zone de jeu
+        self.canvas = QWidget(self)
+        self.canvas.setFixedSize(self.canvas_width, self.canvas_height)
+        self.canvas.setStyleSheet("background-color: white;")
+    
+        # Création du label de score
+        self.score_label = QLabel(self)
+        self.score_label.setText(f"Score: {self.score}")
+        self.score_label.setStyleSheet("font-size: 20px;")
+        self.score_label.setAlignment(Qt.AlignCenter)
+        
+        # Création du bouton cancel
+        self.button_cancel = QPushButton("Cancel", self)
+        self.button_cancel.clicked.connect(self.open_page_accueil)
+        self.button_cancel.setStyleSheet("text-align:center;background-color: #FFE900;")
+        
+        # Création du layout
+        layout = QVBoxLayout()
+        layout.addWidget(self.canvas)
+        layout.addWidget(self.score_label)
+        layout.addWidget(self.button_cancel)
+        self.setLayout(layout)
+    
+        # Création d'un minuteur pour déplacer le rectangle rouge
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.move_red_rect)
+        self.timer.start(250)
+    
+        # Création du rectangle rouge
+        self.red_rect = QWidget(self.canvas)
+        self.red_rect.setFixedSize(25, 25)
+        self.red_rect.setStyleSheet("background-color: red;")
+        self.red_rect.move(*self.random_location())
+        self.red_rect.mousePressEvent = self.on_rectangle_clicked
+    
+    # Fonction pour déplacer le rectangle rouge
+    def move_red_rect(self):
+        new_coords = self.random_location()
+        new_point = QPoint(*new_coords)
+        self.red_rect.move(new_point)
+    
+    # Fonction pour incrémenter le score quand on clique sur le rectangle rouge
+    def on_rectangle_clicked(self, event):
+        self.score += 1
+        self.score_label.setText(f"Score: {self.score}")
+        self.red_rect.move(*self.random_location())
+    
+    # Fonction pour générer une position aléatoire pour le rectangle rouge
+    def random_location(self):
+        x = randint(0, self.canvas_width - 25)
+        y = randint(0, self.canvas_height - 25)
+        return (x, y)
+    
+    # Fonction pour ouvrir la page d'accueil
+    def open_page_accueil(self):
+        self.hide()
+
+class HexagonalButton_settings(QPushButton):
+    def __init__(self, parent=None, radius = 2, text=''):
+        super(HexagonalButton_settings, self).__init__(parent)
+        
+        # Set the background color of the button
+        self.setStyleSheet("background-color: #63666A;")  
+        
+        # Radius of the hexagon
+        self.radius = radius  
+        
+        # Set the minimum size of the button
+        self.setMinimumSize(QSize(3 * self.radius, 3 * self.radius))  
+        
+        # Set the maximum size of the button
+        self.setMaximumSize(QSize(2 * self.radius, 2 * self.radius)) 
+        
+        # Set the mask of the button to a hexagon shape
+        self.setMask(self.hex_mask())  
+        
+        # Add label with text inside the button
+        self.label = QLabel(text, self)
+        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setStyleSheet("color: black;")
+        self.font = QFont()
+        self.font.setPointSize(10)
+        self.label.setFont(self.font)
+        self.label.adjustSize()
+        
+        # Center the label in the button
+        self.label.move(self.radius - self.label.width() / 2, self.radius - self.label.height() / 2)
+
+    def mousePressEvent(self, event):
+        # Call the base class method
+        super().mousePressEvent(event)
+        
+        # Show a message box
+        self.page_settings = Settings()
+        self.page_settings.show()
+
+    def hex_mask(self):
+        # Create a hexagonal mask for the button
+        path = QPainterPath()
+        
+        # Iterate over the 6 vertices of a hexagon
+        for i in range(6):
+            angle_deg = 60 * i
+            angle_rad = math.pi / 180 * angle_deg
+            
+            # Calculate the x, y coordinates of each vertex using trigonometry
+            x = self.radius + self.radius * math.cos(angle_rad)
+            y = self.radius + self.radius * math.sin(angle_rad)
+            
+            # If it's the first vertex, move to it, otherwise, draw a line to it
+            if i == 0:
+                path.moveTo(x, y)
+            else:
+                path.lineTo(x, y)
+                
+        # Close the path to complete the hexagon
+        path.closeSubpath()
+        
+        # Create a circular region to mask the hexagon
+        region = QRegion(QRect(0, 0, 2 * self.radius, 2 * self.radius), QRegion.Ellipse)
+        
+        # Intersect the circular region with the hexagon to create the final mask
+        region = region.intersected(QRegion(path.toFillPolygon().toPolygon()))
+        
+        # Return the final mask
+        return region
+    
+class Settings(QWidget):
+    def __init__(self):
+        super().__init__()
+        global BROCHES_POMPES, liste_nom
+        liste_alcool = ["Tequila","Gin","Vodka","Rhum","Aperol","Campari",
+                        "Jägermeister","Cointreau","Suze","Prosecco"]
+        liste_diluant = ["orange juice","Coca-Cola","Fanta","Sprite"]
+        liste_grand_verre = ["250", "330", "500"]
+        liste_petit_verre = ["30","40","50"]
+        self.setWindowTitle("Settings")
+        self.setGeometry(0, -5, 500, 300)
+        label = QLabel('    ')
+        label_alcool = QLabel('Choose the available hard and soft drinks')
+        label_verre = QLabel('Choose the size of your glasses in mL')
+        self.scroll = QScrollArea(self)
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+
+        # Création d'un widget qui sera ajouté au widget de défilement
+        content_widget = QWidget(self.scroll)
+        self.scroll.setWidget(content_widget)
+        scroll_layout = QGridLayout(content_widget)
+
+        
+        # box 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,18 sont pour le choix des alcools et des softs
+        # box 16 et 17 sont pour le choix de la tailles des verres 
+        #############################################
+        # Créer un layout horizontal pour placer le label "1.", le QComboBox et le bouton "OK"
+        # Appeler la méthode num_comboBox pour créer le QComboBox avec le label "1."
+        combo_box_layout1 = QHBoxLayout()
+        label1 = QLabel('1')
+        
+        # Créer un QComboBox avec les choix de la liste "liste_alcool"
+        combo_box1 = QComboBox()
+        combo_box1.addItems(liste_alcool)
+        ok_button = QPushButton("OK")
+        
+        # Connecter le signal "clicked" du bouton "OK" à la fonction qui imprime le choix sélectionné dans la console
+        ok_button.clicked.connect(lambda: self.bouton(label1, combo_box1))
+        
+        # Ajouter le label "1." et le QComboBox au layout horizontal
+        combo_box_layout1.addWidget(label1)
+        combo_box_layout1.addWidget(combo_box1)
+        combo_box_layout1.addWidget(ok_button)
+        ################################################
+        # Créer un layout horizontal pour placer le label "2.", le QComboBox et le bouton "OK"
+        # Appeler la méthode num_comboBox pour créer le QComboBox avec le label "2."
+        combo_box_layout2 = QHBoxLayout()
+        label2 = QLabel('2')
+        
+        # Créer un QComboBox avec les choix de la liste "liste_alcool"
+        combo_box2 = QComboBox()
+        combo_box2.addItems(liste_alcool)
+        ok_button = QPushButton("OK")
+        
+        # Connecter le signal "clicked" du bouton "OK" à la fonction qui imprime le choix sélectionné dans la console
+        ok_button.clicked.connect(lambda: self.bouton(label2, combo_box2))
+        
+        # Ajouter le label "2." et le QComboBox au layout horizontal
+        combo_box_layout2.addWidget(label2)
+        combo_box_layout2.addWidget(combo_box2)
+        combo_box_layout2.addWidget(ok_button)
+        ##############################################
+        # Créer un layout horizontal pour placer le label "3.", le QComboBox et le bouton "OK"
+        # Appeler la méthode num_comboBox pour créer le QComboBox avec le label "3."
+        combo_box_layout3 = QHBoxLayout()
+        label3 = QLabel('3')
+        
+        # Créer un QComboBox avec les choix de la liste "liste_alcool"
+        combo_box3 = QComboBox()
+        combo_box3.addItems(liste_alcool)
+        ok_button = QPushButton("OK")
+        
+        # Connecter le signal "clicked" du bouton "OK" à la fonction qui imprime le choix sélectionné dans la console
+        ok_button.clicked.connect(lambda: self.bouton(label3, combo_box3))
+        
+        # Ajouter le label "3." et le QComboBox au layout horizontal
+        combo_box_layout3.addWidget(label3)
+        combo_box_layout3.addWidget(combo_box3)
+        combo_box_layout3.addWidget(ok_button)
+        ##############################################
+        # Créer un layout horizontal pour placer le label "4.", le QComboBox et le bouton "OK"
+        # Appeler la méthode num_comboBox pour créer le QComboBox avec le label "4."
+        combo_box_layout4 = QHBoxLayout()
+        label4 = QLabel('4')
+        
+        # Créer un QComboBox avec les choix de la liste "liste_alcool"
+        combo_box4 = QComboBox()
+        combo_box4.addItems(liste_alcool)
+        ok_button = QPushButton("OK")
+        
+        # Connecter le signal "clicked" du bouton "OK" à la fonction qui imprime le choix sélectionné dans la console
+        ok_button.clicked.connect(lambda: self.bouton(label4, combo_box4))
+        
+        # Ajouter le label "4." et le QComboBox au layout horizontal
+        combo_box_layout4.addWidget(label4)
+        combo_box_layout4.addWidget(combo_box4)
+        combo_box_layout4.addWidget(ok_button)
+        ##############################################
+        # Créer un layout horizontal pour placer le label "5.", le QComboBox et le bouton "OK"
+        # Appeler la méthode num_comboBox pour créer le QComboBox avec le label "5."
+        combo_box_layout5 = QHBoxLayout()
+        label5 = QLabel('5')
+        
+        # Créer un QComboBox avec les choix de la liste "liste_alcool"
+        combo_box5 = QComboBox()
+        combo_box5.addItems(liste_alcool)
+        ok_button = QPushButton("OK")
+        
+        # Connecter le signal "clicked" du bouton "OK" à la fonction qui imprime le choix sélectionné dans la console
+        ok_button.clicked.connect(lambda: self.bouton(label5, combo_box5))
+        
+        # Ajouter le label "5." et le QComboBox au layout horizontal
+        combo_box_layout5.addWidget(label5)
+        combo_box_layout5.addWidget(combo_box5)
+        combo_box_layout5.addWidget(ok_button)
+        ##############################################
+        # Créer un layout horizontal pour placer le label "6.", le QComboBox et le bouton "OK"
+        # Appeler la méthode num_comboBox pour créer le QComboBox avec le label "6."
+        combo_box_layout6 = QHBoxLayout()
+        label6 = QLabel('6')
+        
+        # Créer un QComboBox avec les choix de la liste "liste_alcool"
+        combo_box6 = QComboBox()
+        combo_box6.addItems(liste_alcool)
+        ok_button = QPushButton("OK")
+        
+        # Connecter le signal "clicked" du bouton "OK" à la fonction qui imprime le choix sélectionné dans la console
+        ok_button.clicked.connect(lambda: self.bouton(label6, combo_box6))
+        
+        # Ajouter le label "6." et le QComboBox au layout horizontal
+        combo_box_layout6.addWidget(label6)
+        combo_box_layout6.addWidget(combo_box6)
+        combo_box_layout6.addWidget(ok_button)
+        ##############################################
+        # Créer un layout horizontal pour placer le label "7.", le QComboBox et le bouton "OK"
+        # Appeler la méthode num_comboBox pour créer le QComboBox avec le label "7."
+        combo_box_layout7 = QHBoxLayout()
+        label7 = QLabel('7')
+        
+        # Créer un QComboBox avec les choix de la liste "liste_alcool"
+        combo_box7 = QComboBox()
+        combo_box7.addItems(liste_alcool)
+        ok_button = QPushButton("OK")
+        
+        # Connecter le signal "clicked" du bouton "OK" à la fonction qui imprime le choix sélectionné dans la console
+        ok_button.clicked.connect(lambda: self.bouton(label7, combo_box7))
+        
+        # Ajouter le label "7." et le QComboBox au layout horizontal
+        combo_box_layout7.addWidget(label7)
+        combo_box_layout7.addWidget(combo_box7)
+        combo_box_layout7.addWidget(ok_button)
+        ##############################################
+        # Créer un layout horizontal pour placer le label "8.", le QComboBox et le bouton "OK"
+        # Appeler la méthode num_comboBox pour créer le QComboBox avec le label "8."
+        combo_box_layout8 = QHBoxLayout()
+        label8 = QLabel('8')
+        
+        # Créer un QComboBox avec les choix de la liste "liste_alcool"
+        combo_box8 = QComboBox()
+        combo_box8.addItems(liste_alcool)
+        ok_button = QPushButton("OK")
+        
+        # Connecter le signal "clicked" du bouton "OK" à la fonction qui imprime le choix sélectionné dans la console
+        ok_button.clicked.connect(lambda: self.bouton(label8, combo_box8))
+        
+        # Ajouter le label "8." et le QComboBox au layout horizontal
+        combo_box_layout8.addWidget(label8)
+        combo_box_layout8.addWidget(combo_box8)
+        combo_box_layout8.addWidget(ok_button)
+        ##############################################
+        # Créer un layout horizontal pour placer le label "9.", le QComboBox et le bouton "OK"
+        # Appeler la méthode num_comboBox pour créer le QComboBox avec le label "9."
+        combo_box_layout9 = QHBoxLayout()
+        label9 = QLabel('9')
+        
+        # Créer un QComboBox avec les choix de la liste "liste_alcool"
+        combo_box9 = QComboBox()
+        combo_box9.addItems(liste_diluant)
+        ok_button = QPushButton("OK")
+        
+        # Connecter le signal "clicked" du bouton "OK" à la fonction qui imprime le choix sélectionné dans la console
+        ok_button.clicked.connect(lambda: self.bouton(label9, combo_box9))
+        
+        # Ajouter le label "9." et le QComboBox au layout horizontal
+        combo_box_layout9.addWidget(label9)
+        combo_box_layout9.addWidget(combo_box9)
+        combo_box_layout9.addWidget(ok_button)
+        ##############################################
+        # Créer un layout horizontal pour placer le label "10.", le QComboBox et le bouton "OK"
+        # Appeler la méthode num_comboBox pour créer le QComboBox avec le label "10."
+        combo_box_layout10 = QHBoxLayout()
+        label10 = QLabel('10')
+        
+        # Créer un QComboBox avec les choix de la liste "liste_alcool"
+        combo_box10 = QComboBox()
+        combo_box10.addItems(liste_diluant)
+        ok_button = QPushButton("OK")
+        
+        # Connecter le signal "clicked" du bouton "OK" à la fonction qui imprime le choix sélectionné dans la console
+        ok_button.clicked.connect(lambda: self.bouton(label10, combo_box10))
+        
+        # Ajouter le label "10." et le QComboBox au layout horizontal
+        combo_box_layout10.addWidget(label10)
+        combo_box_layout10.addWidget(combo_box10)
+        combo_box_layout10.addWidget(ok_button)
+        ##############################################
+        # Créer un layout horizontal pour placer le label "11.", le QComboBox et le bouton "OK"
+        # Appeler la méthode num_comboBox pour créer le QComboBox avec le label "11."
+        combo_box_layout11 = QHBoxLayout()
+        label11 = QLabel('11')
+        
+        # Créer un QComboBox avec les choix de la liste "liste_alcool"
+        combo_box11 = QComboBox()
+        combo_box11.addItems(liste_diluant)
+        ok_button = QPushButton("OK")
+        
+        # Connecter le signal "clicked" du bouton "OK" à la fonction qui imprime le choix sélectionné dans la console
+        ok_button.clicked.connect(lambda: self.bouton(label11, combo_box11))
+        
+        # Ajouter le label "11." et le QComboBox au layout horizontal
+        combo_box_layout11.addWidget(label11)
+        combo_box_layout11.addWidget(combo_box11)
+        combo_box_layout11.addWidget(ok_button)
+        ##############################################
+        # Créer un layout horizontal pour placer le label "12.", le QComboBox et le bouton "OK"
+        # Appeler la méthode num_comboBox pour créer le QComboBox avec le label "12."
+        combo_box_layout12 = QHBoxLayout()
+        label12 = QLabel('12')
+        combo_box12 = QComboBox()
+        combo_box12.addItems(liste_diluant)
+        ok_button = QPushButton("OK")
+        
+        # Connecter le signal "clicked" du bouton "OK" à la fonction qui imprime le choix sélectionné dans la console
+        ok_button.clicked.connect(lambda: self.bouton(label12, combo_box12))
+        
+        # Ajouter le label "12." et le QComboBox au layout horizontal
+        combo_box_layout12.addWidget(label12)
+        combo_box_layout12.addWidget(combo_box12)
+        combo_box_layout12.addWidget(ok_button)
+        ##############################################
+        # Créer un layout horizontal pour placer le label "13.", le QComboBox et le bouton "OK"
+        # Appeler la méthode num_comboBox pour créer le QComboBox avec le label "13."
+        combo_box_layout13 = QHBoxLayout()
+        label13 = QLabel('13')
+        
+        # Créer un QComboBox avec les choix de la liste "liste_alcool"
+        combo_box13 = QComboBox()
+        combo_box13.addItems(liste_diluant)
+        ok_button = QPushButton("OK")
+        
+        # Connecter le signal "clicked" du bouton "OK" à la fonction qui imprime le choix sélectionné dans la console
+        ok_button.clicked.connect(lambda: self.bouton(label13, combo_box13))
+        
+        # Ajouter le label "13." et le QComboBox au layout horizontal
+        combo_box_layout13.addWidget(label13)
+        combo_box_layout13.addWidget(combo_box13)
+        combo_box_layout13.addWidget(ok_button)
+        ##############################################
+        # Créer un layout horizontal pour placer le label "14.", le QComboBox et le bouton "OK"
+        # Appeler la méthode num_comboBox pour créer le QComboBox avec le label "14."
+        combo_box_layout14 = QHBoxLayout()
+        label14 = QLabel('14')
+        
+        # Créer un QComboBox avec les choix de la liste "liste_alcool"
+        combo_box14 = QComboBox()
+        combo_box14.addItems(liste_diluant)
+        ok_button = QPushButton("OK")
+        
+        # Connecter le signal "clicked" du bouton "OK" à la fonction qui imprime le choix sélectionné dans la console
+        ok_button.clicked.connect(lambda: self.bouton(label14, combo_box14))
+        
+        # Ajouter le label "14." et le QComboBox au layout horizontal
+        combo_box_layout14.addWidget(label14)
+        combo_box_layout14.addWidget(combo_box14)
+        combo_box_layout14.addWidget(ok_button)
+        ##############################################
+        # Créer un layout horizontal pour placer le label "15.", le QComboBox et le bouton "OK"
+        # Appeler la méthode num_comboBox pour créer le QComboBox avec le label "15."
+        combo_box_layout15 = QHBoxLayout()
+        label15 = QLabel('15')
+        
+        # Créer un QComboBox avec les choix de la liste "liste_alcool"
+        combo_box15 = QComboBox()
+        combo_box15.addItems(liste_diluant)
+        ok_button = QPushButton("OK")
+        
+        # Connecter le signal "clicked" du bouton "OK" à la fonction qui imprime le choix sélectionné dans la console
+        ok_button.clicked.connect(lambda: self.bouton(label15, combo_box15))
+        
+        # Ajouter le label "15." et le QComboBox au layout horizontal
+        combo_box_layout15.addWidget(label15)
+        combo_box_layout15.addWidget(combo_box15)
+        combo_box_layout15.addWidget(ok_button)
+        ##############################################
+        # Créer un layout horizontal pour placer le label "16.", le QComboBox et le bouton "OK"
+        # Appeler la méthode num_comboBox pour créer le QComboBox avec le label "16."
+        combo_box_layout16 = QHBoxLayout()
+        label16 = QLabel('16')
+        
+        # Créer un QComboBox avec les choix de la liste "liste_grand_verre"
+        combo_box16 = QComboBox()
+        combo_box16.addItems(liste_diluant)
+        ok_button = QPushButton("OK")
+        
+        # Connecter le signal "clicked" du bouton "OK" à la fonction qui imprime le choix sélectionné dans la console
+        ok_button.clicked.connect(lambda: self.bouton(label16, combo_box16))
+        
+        # Ajouter le label "16." et le QComboBox au layout horizontal
+        combo_box_layout16.addWidget(label16)
+        combo_box_layout16.addWidget(combo_box16)
+        combo_box_layout16.addWidget(ok_button)
+        ##############################################
+        # Créer un layout horizontal pour placer le QComboBox et le bouton "OK" associé
+        combo_box_layout17 = QHBoxLayout()
+        
+        # Créer un QComboBox pour les petits verres et ajouter les options à partir de la liste donnée
+        combo_box17 = QComboBox()
+        combo_box17.addItems(liste_petit_verre)
+        
+        # Créer un bouton "OK" associé au QComboBox pour les petits verres
+        ok_button17 = QPushButton("OK")
+        
+        # Connecter le signal "clicked" du bouton "OK" à la fonction qui imprime le choix sélectionné dans la console
+        ok_button17.clicked.connect(lambda: self.petit_verre(combo_box17))
+        
+        # Ajouter le QComboBox et le bouton "OK" au layout horizontal
+        combo_box_layout17.addWidget(combo_box17)
+        combo_box_layout17.addWidget(ok_button17)
+        ###############################################
+        # Créer un layout horizontal pour placer le QComboBox et le bouton "OK" associé
+        combo_box_layout18 = QHBoxLayout()
+        
+        # Créer un QComboBox pour les grands verres et ajouter les options à partir de la liste donnée
+        combo_box18 = QComboBox()
+        combo_box18.addItems(liste_grand_verre)
+        
+        # Créer un bouton "OK" associé au QComboBox pour les grands verres
+        ok_button = QPushButton("OK")
+        
+        # Connecter le signal "clicked" du bouton "OK" à la fonction qui imprime le choix sélectionné dans la console
+        ok_button.clicked.connect(lambda: self.grand_verre(combo_box18))
+        
+        # Ajouter le label "18." et le QComboBox au layout horizontal
+        combo_box_layout18.addWidget(combo_box18)
+        combo_box_layout18.addWidget(ok_button)      
+       
+        ##############################################
+        #creation du bouton confirmation 
+        self.button_confirmation = QPushButton("Confirm", self)
+        self.button_confirmation.clicked.connect(self.page_accueil)
+        self.button_confirmation.setStyleSheet("text-align:center;")
+
+        #creation du bouton cancel 
+        self.button_cancel = QPushButton("Cancel", self)
+        self.button_cancel.clicked.connect(self.page_accueil)
+        self.button_cancel.setStyleSheet("text-align:center;")
+        
+        # Ajouter les layouts et les widgets au layout principal
+        scroll_layout.addWidget(label,0,0)
+        scroll_layout.addWidget(label_alcool, 1, 0, 1, 2)
+        scroll_layout.addLayout(combo_box_layout1,2,0)
+        scroll_layout.addLayout(combo_box_layout2,2,1)
+        scroll_layout.addLayout(combo_box_layout3,3,0)
+        scroll_layout.addLayout(combo_box_layout4,3,1)
+        scroll_layout.addLayout(combo_box_layout5,4,0)
+        scroll_layout.addLayout(combo_box_layout6,4,1)
+        scroll_layout.addLayout(combo_box_layout7,5,0)
+        scroll_layout.addLayout(combo_box_layout8,5,1)
+        scroll_layout.addLayout(combo_box_layout9,6,0)
+        scroll_layout.addLayout(combo_box_layout10,6,1)
+        scroll_layout.addLayout(combo_box_layout11,7,0)
+        scroll_layout.addLayout(combo_box_layout12,7,1)
+        scroll_layout.addLayout(combo_box_layout13,8,0)
+        scroll_layout.addLayout(combo_box_layout14,8,1)
+        scroll_layout.addLayout(combo_box_layout15,9,0)
+        scroll_layout.addLayout(combo_box_layout16,9,1)
+        scroll_layout.addWidget(label_verre,10, 0, 1, 2)
+        scroll_layout.addLayout(combo_box_layout18,11,0)
+        scroll_layout.addLayout(combo_box_layout17,11,1)
+        scroll_layout.addWidget(self.button_cancel,12,0)
+        scroll_layout.addWidget(self.button_confirmation,12,1)
+        
+        content_widget.setLayout(scroll_layout) # Définit le layout de "content_widget" à "vbox".
+        
+        main_layout = QVBoxLayout(self) # Crée un QVBoxLayout nommé "main_layout" avec l'objet actuel comme parent.
+        main_layout.addWidget(self.scroll) # Ajoute le widget "scroll" à "main_layout".
+        self.setLayout(main_layout) # Définit le layout de l'objet actuel à "main_layout".
+        
+        # Définir le layout principal de la fenêtre
+        #self.setCentralWidget(scroll_content)
+        #self.setLayout(scroll_layout)
+        
+    def grand_verre(self, combo_box):
+        # la variable taille_grand_verre en variable global pour pouvoir l'utiliser danscette partie du code
+        global taille_grand_verre
+        
+        # Si l'utilisateur a choisi l'option "250", la taille du grand verre est de 250 ml
+        if combo_box.currentText() == "250":
+            taille_grand_verre = 250
+            
+        # Si l'utilisateur a choisi l'option "330", la taille du grand verre est de 330 ml
+        elif combo_box.currentText() == "330":
+            taille_grand_verre = 330
+            
+        # Si l'utilisateur a choisi l'option "500", la taille du grand verre est de 500 ml
+        elif combo_box.currentText() == "500":
+            taille_grand_verre = 500
+        
+        # return la taille du verre pour les cocktails choisi
+        return taille_grand_verre
+    
+    def petit_verre(self, combo_box):
+        # la variable taille_petit_verre en variable global pour pouvoir l'utiliser danscette partie du code
+        global taille_petit_verre
+        
+        # Si l'utilisateur a choisi l'option "30", la taille du grand verre est de 25 ml
+        if combo_box.currentText() == "30":
+            taille_petit_verre = 25
+        
+         # Si l'utilisateur a choisi l'option "40", la taille du grand verre est de 35 ml
+        elif combo_box.currentText() == "40":
+            taille_petit_verre = 35
+        
+         # Si l'utilisateur a choisi l'option "50", la taille du grand verre est de 45 ml
+        elif combo_box.currentText() == "50":
+            taille_petit_verre = 45
+        
+        # return la taille du verre pour les cocktails choisi
+        return taille_petit_verre
+    
+    def bouton(self, label, combo_box):
+        
+        # les variables liste_nom et BROCHES_POMPES en variable global pour pouvoir mettre le nom des alcools enregistrer dans la machine
+        global liste_nom, BROCHES_POMPES
+        
+        # chaque alcool entrer à sa place pour les pompes 
+        if label.text() == '1':
+            liste_nom[0] = str(combo_box.currentText())
+            return liste_nom
+        elif label.text() == '2':
+            liste_nom[1] = str(combo_box.currentText())
+            return liste_nom
+        elif label.text() == '3':
+            liste_nom[2] = str(combo_box.currentText())
+            return liste_nom
+        elif label.text() == '4':
+            liste_nom[3] = str(combo_box.currentText())
+            return liste_nom
+        elif label.text() == '5':
+            liste_nom[4] = str(combo_box.currentText())
+            return liste_nom
+        elif label.text() == '6':
+            liste_nom[5] = str(combo_box.currentText())
+            return liste_nom
+        elif label.text() == '7':
+            liste_nom[6] = str(combo_box.currentText())
+            return liste_nom
+        elif label.text() == '8':
+            liste_nom[7] = str(combo_box.currentText())
+            return liste_nom
+        elif label.text() == '9':
+            liste_nom[8] = str(combo_box.currentText())
+            return liste_nom
+        elif label.text() == '10':
+            liste_nom[9] = str(combo_box.currentText())
+            return liste_nom
+        elif label.text() == '11':
+            liste_nom[10] = str(combo_box.currentText())
+            return liste_nom
+        elif label.text() == '12':
+            liste_nom[11] = str(combo_box.currentText())
+            return liste_nom
+        elif label.text() == '13':
+            liste_nom[12] = str(combo_box.currentText())
+            return liste_nom
+        elif label.text() == '14':
+            liste_nom[13] = str(combo_box.currentText())
+            return liste_nom
+        elif label.text() == '15':
+            liste_nom[14] = str(combo_box.currentText())
+            return liste_nom
+        elif label.text() == '16':
+            liste_nom[15] = str(combo_box.currentText())
+            return liste_nom
+        
+    def page_accueil(self):
+        # renvoie à la page d'accueil
+        self.hide()
+       
+class HexagonalButton_BeeBuzz(QPushButton):
+    def __init__(self, parent=None, radius=2, text=''):
+        super(HexagonalButton_BeeBuzz, self).__init__(parent)
+        
+        # Set the button's background color
+        self.setStyleSheet("background-color: #FFE900;")
+        
+        # Set the button's radius and size limits
+        self.radius = radius
+        self.setMinimumSize(QSize(3 * self.radius, 3 * self.radius))
+        self.setMaximumSize(QSize(2 * self.radius, 2 * self.radius))
+        
+        # Set the button's mask
+        self.setMask(self.hex_mask())
+        
+        # Add label to the button
+        self.label = QLabel(text, self)
+        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setStyleSheet("color: black;")
+        self.font = QFont()
+        self.font.setPointSize(10)
+        self.label.setFont(self.font)
+        self.label.adjustSize()
+        self.label.move(self.radius - self.label.width() / 2, self.radius - self.label.height() / 2)
+
+    # Override the mousePressEvent method to add custom functionality
+    def mousePressEvent(self, event):
+        # Call the base class method
+        super().mousePressEvent(event)
+        
+        # Call the reset_dosage method of Accueil class
+        reset = Accueil().reset_dosage
+        
+        # Open the Page_BeeBuzz window
+        self.page_BeeBuzz = Page_BeeBuzz()
+        self.page_BeeBuzz.show()
+
+    # Define a method to create a hexagonal mask for the button
+    def hex_mask(self):
+        path = QPainterPath()
+        for i in range(6):
+            angle_deg = 60 * i
+            angle_rad = math.pi / 180 * angle_deg
+            x = self.radius + self.radius * math.cos(angle_rad)
+            y = self.radius + self.radius * math.sin(angle_rad)
+            if i == 0:
+                path.moveTo(x, y)
+            else:
+                path.lineTo(x, y)
+        path.closeSubpath()
+        region = QRegion(QRect(0, 0, 2 * self.radius, 2 * self.radius), QRegion.Ellipse)
+        region = region.intersected(QRegion(path.toFillPolygon().toPolygon()))
+        return region
+
+class Page_BeeBuzz(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Page BeeBuzz")
+        
+        # Création des objets HexagonLabel et ajout au layout horizontal
+        hbox = QHBoxLayout()
+        vbox = QVBoxLayout()
+        
+        #label pour demander le nombre de joueur pour le jeu         
+        label_nombre_de_joueur = QLabel('choose the number of players')
+        label_nombre_de_joueur.setAlignment(Qt.AlignHCenter)
+        
+        # 2 joueurs
+        hexagone2 = HexagonLabel()
+        hexagone2.slider_name = f"2"
+        hexagone2.clicked.connect(self.handle_hexagon_clicked)
+        hbox.addWidget(hexagone2)
+        
+        # 3 joueurs
+        hexagone3 = HexagonLabel()
+        hexagone3.slider_name = f"3"
+        hexagone3.clicked.connect(self.handle_hexagon_clicked)
+        hbox.addWidget(hexagone3)
+        
+        # 4 joueurs
+        hexagone4 = HexagonLabel()
+        hexagone4.slider_name = f"4"
+        hexagone4.clicked.connect(self.handle_hexagon_clicked)
+        hbox.addWidget(hexagone4)
+        
+        # 5 joueurs
+        hexagone5 = HexagonLabel()
+        hexagone5.slider_name = f"5"
+        hexagone5.clicked.connect(self.handle_hexagon_clicked)
+        hbox.addWidget(hexagone5)
+        
+        # 6 joueurs
+        hexagone6 = HexagonLabel()
+        hexagone6.slider_name = f"6"
+        hexagone6.clicked.connect(self.handle_hexagon_clicked)
+        hbox.addWidget(hexagone6)
+        
+        # Ajout des hexagones au layout vertical
+        vbox.addStretch()
+        vbox.addWidget(label_nombre_de_joueur)   
+        vbox.addStretch()        
+        vbox.addLayout(hbox)
+        vbox.addStretch()     
+        
+        # Bouton Cancel
+        self.button_cancel = QPushButton("Cancel", self)
+        self.button_cancel.clicked.connect(self.page_accueil)
+        self.button_cancel.setStyleSheet("text-align:center;")
+        
+        # Configuration du layout pour le bouton Cancel
+        ligne_cancel = QHBoxLayout()
+        ligne_cancel.addWidget(self.button_cancel)
+        ligne_cancel.setAlignment(Qt.AlignRight)
+        
+        # Ajout du layout pour le bouton Cancel au layout vertical
+        vbox.addLayout(ligne_cancel)
+        
+        # Configuration du layout de la fenêtre principale
+        self.setLayout(vbox)
+        self.setGeometry(0, -5, 500, 300)
+        self.show()
+
+    def convertStrtoBytes(self,src):
+        converted = []
+        for b in src:
+            converted.append(ord(b))
+        return converted
+    
+    def envoie(self,string, adresse):
+        bytestosend = self.convertStrtoBytes(string)
+        smbus.SMBus(1).write_i2c_block_data(adresse,int(bytestosend))
+        
+    def handle_hexagon_clicked(self):
+        # Récupère l'hexagone qui a été cliqué
+        hexagon = self.sender()
+        # Récupère le nom de l'hexagone
+        sender_name = hexagon.slider_name
+        # Définit le nombre de joueurs en fonction du nom de l'hexagone cliqué
+        global number_player, count
+        if sender_name == "2":
+            number_player = 2
+            send = self.envoie('2', arduino_adress_Beebuzzed)
+        elif sender_name == "3":
+            number_player = 3
+            send = self.envoie('3', arduino_adress_Beebuzzed)
+        elif sender_name == "4":
+            number_player = 4
+            send = self.envoie('4', arduino_adress_Beebuzzed)
+        elif sender_name == "5":
+            number_player = 5
+            send = self.envoie('5', arduino_adress_Beebuzzed)
+        elif sender_name == "6":
+            number_player = 6
+            send = self.envoie('6', arduino_adress_Beebuzzed)
+        # Affiche la page de choix de l'alcool et cache la page actuelle
+        self.page_BeeBuzz = Page_BeeBuzz_choix_alcool()
+        self.page_BeeBuzz.show()
+        self.hide()
+        # Affiche le nombre de joueurs sélectionné dans la console
+        count = 0
+        # Retourne le nombre de joueurs sélectionné
+        return number_player 
+            
+    def page_accueil(self):
+        # Cache la page actuelle
+        self.hide()
+
+class Page_BeeBuzz_choix_alcool(QWidget):
+    def __init__(self):
+        super().__init__()
+        global text_a, text_b, text_c, text_d, text_e, text_f, text_g, text_h, text_i, text_j, text_k, text_l, text_m, text_n, text_o, liste_nom, liste_dosage, taille_petit_verre 
+        # Récupération des noms des boissons depuis la liste_nom globale
+        text_a = liste_nom[0]
+        text_b = liste_nom[1]
+        text_c = liste_nom[2]
+        text_d = liste_nom[3]
+        text_e = liste_nom[4]
+        text_f = liste_nom[5]
+        text_g = liste_nom[6]
+        text_h = liste_nom[7]
+        text_i = liste_nom[8]
+        text_j = liste_nom[9]
+        text_k = liste_nom[10]
+        text_l = liste_nom[11]
+        text_m = liste_nom[12]
+        text_n = liste_nom[13]
+        text_o = liste_nom[14]
+        text_p = liste_nom[15]
+        
+        self.setWindowTitle("Page BeeBuzz choix alcool")
+        # Création des objets HexagonLabel et ajout au layout horizontal
+        ligne1 = QHBoxLayout()
+        ligne2 = QHBoxLayout()
+        ligne3 = QHBoxLayout()
+        ligne4 = QHBoxLayout()
+        ligne5 = QHBoxLayout()
+        vbox = QVBoxLayout()
+        
+        label = QLabel("Choose your drink", self)
+        label.setAlignment(Qt.AlignCenter) # center align the text in the label
+        ligne1.addWidget(label)
+        
+        # Création des HexagonLabels pour chaque boisson
+        self.hexagon1_1 = HexagonLabel(self)
+        self.hexagon1_1.slider_name = text_a
+        self.hexagon1_1.clicked.connect(self.hexagon_clicked)
+        
+        self.hexagon1_2 = HexagonLabel(self)
+        self.hexagon1_2.slider_name = text_b
+        self.hexagon1_2.clicked.connect(self.hexagon_clicked)
+        
+        self.hexagon1_3 = HexagonLabel(self)
+        self.hexagon1_3.slider_name = text_c
+        self.hexagon1_3.clicked.connect(self.hexagon_clicked)
+        
+        self.hexagon1_4 = HexagonLabel(self)
+        self.hexagon1_4.slider_name = text_d
+        self.hexagon1_4.clicked.connect(self.hexagon_clicked)
+        
+        self.hexagon2_1 = HexagonLabel(self)
+        self.hexagon2_1.slider_name = text_e
+        self.hexagon2_1.clicked.connect(self.hexagon_clicked)
+        
+        self.hexagon2_2 = HexagonLabel(self)
+        self.hexagon2_2.slider_name = text_f
+        self.hexagon2_2.clicked.connect(self.hexagon_clicked)
+        
+        self.hexagon2_3 = HexagonLabel(self)
+        self.hexagon2_3.slider_name = text_g
+        self.hexagon2_3.clicked.connect(self.hexagon_clicked)
+        
+        self.hexagon2_4 = HexagonLabel(self)
+        self.hexagon2_4.slider_name = text_h
+        self.hexagon2_4.clicked.connect(self.hexagon_clicked)
+        
+        self.hexagon3_1 = HexagonLabel(self)
+        self.hexagon3_1.slider_name = text_i
+        self.hexagon3_1.clicked.connect(self.hexagon_clicked)
+        
+        self.hexagon3_2 = HexagonLabel(self)
+        self.hexagon3_2.slider_name = text_j
+        self.hexagon3_2.clicked.connect(self.hexagon_clicked)
+    
+        self.hexagon3_3 = HexagonLabel(self)
+        self.hexagon3_3.slider_name = text_k
+        self.hexagon3_3.clicked.connect(self.hexagon_clicked)
+        
+        self.hexagon3_4 = HexagonLabel(self)
+        self.hexagon3_4.slider_name = text_l
+        self.hexagon3_4.clicked.connect(self.hexagon_clicked)
+        
+        self.hexagon4_1 = HexagonLabel(self)
+        self.hexagon4_1.slider_name = text_m
+        self.hexagon4_1.clicked.connect(self.hexagon_clicked)
+        
+        self.hexagon4_2 = HexagonLabel(self)
+        self.hexagon4_2.slider_name = text_n
+        self.hexagon4_2.clicked.connect(self.hexagon_clicked)
+    
+        self.hexagon4_3 = HexagonLabel(self)
+        self.hexagon4_3.slider_name = text_o
+        self.hexagon4_3.clicked.connect(self.hexagon_clicked)
+        
+        self.hexagon4_4 = HexagonLabel(self)
+        self.hexagon4_4.slider_name = text_p
+        self.hexagon4_4.clicked.connect(self.hexagon_clicked)
+        
+        # ligne 2
+        ligne2.addWidget(self.hexagon1_1)
+        ligne2.addWidget(self.hexagon1_2)
+        ligne2.addWidget(self.hexagon1_3)
+        ligne2.addWidget(self.hexagon1_4)
+        
+        # ligne 3
+        ligne3.addWidget(self.hexagon2_1)
+        ligne3.addWidget(self.hexagon2_2)
+        ligne3.addWidget(self.hexagon2_3)
+        ligne3.addWidget(self.hexagon2_4)
+        
+        # ligne 4
+        ligne4.addWidget(self.hexagon3_1)
+        ligne4.addWidget(self.hexagon3_2)
+        ligne4.addWidget(self.hexagon3_3)
+        ligne4.addWidget(self.hexagon3_4)
+        
+        # ligne 5
+        ligne5.addWidget(self.hexagon4_1)
+        ligne5.addWidget(self.hexagon4_2)
+        ligne5.addWidget(self.hexagon4_3)
+        ligne5.addWidget(self.hexagon4_4)
+        
+        # Configuration du layout de la fenêtre principale
+        vbox.addLayout(ligne1)
+        vbox.addLayout(ligne2)
+        vbox.addLayout(ligne3)
+        vbox.addLayout(ligne4)
+        vbox.addLayout(ligne5)
+        self.setLayout(vbox)
+        self.setGeometry(0, -5, 500, 300)
+        self.show()
+        
+    def hexagon_clicked(self):
+        global liste_nom, pompe_number
+        hexagon = self.sender() # get the hexagon that was clicked
+        sender_name = hexagon.slider_name # get the slider name associated with the hexagon
+        self.nextpage = Page1() # create the next page object
+        self.nextpage.show() # show the next page
+        self.hide() # hide the current page
+        # determine the pump number based on the slider name
+        if sender_name == liste_nom[0]:
+            pompe_number = 0
+        elif sender_name == liste_nom[1]:
+            pompe_number = 1
+        elif sender_name == liste_nom[2]:
+            pompe_number = 2
+        elif sender_name == liste_nom[3]:
+            pompe_number = 3
+        elif sender_name == liste_nom[4]:
+            pompe_number = 4
+        elif sender_name == liste_nom[5]:
+            pompe_number = 5
+        elif sender_name == liste_nom[6]:
+            pompe_number = 6
+        elif sender_name == liste_nom[7]:
+            pompe_number = 7
+        elif sender_name == liste_nom[8]:
+            pompe_number = 8
+        elif sender_name == liste_nom[9]:
+            pompe_number = 9
+        elif sender_name == liste_nom[10]:
+            pompe_number = 10
+        elif sender_name == liste_nom[11]:
+            pompe_number = 11
+        elif sender_name == liste_nom[12]:
+            pompe_number = 12
+        elif sender_name == liste_nom[13]:
+            pompe_number = 13
+        elif sender_name == liste_nom[14]:
+            pompe_number = 14
+        elif sender_name == liste_nom[15]:
+            pompe_number = 15
+        elif sender_name == liste_nom[16]:
+            pompe_number = 16
+        return pompe_number
+    
+class Page1(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setGeometry(0, -5, 500, 300)
+        self.initUI()
+
+    def initUI(self):
+        global taille_petit_verre, temps
+
+        # create a label and a button
+        label = QLabel("Mettez votre verre")
+        button1 = QPushButton("Commencer")
+
+        # create a vertical box layout and add the label and button to it
+        layout = QVBoxLayout()
+        layout.addStretch()
+        layout.addWidget(label)
+        layout.addStretch()
+        layout.addWidget(button1)
+        layout.addStretch()
+        layout.setAlignment(Qt.AlignCenter)
+        self.setLayout(layout)
+
+        # connect the button to the nextPage method and set the value of temps
+        button1.clicked.connect(self.nextPage)
+        temps = self.mLensecondes(taille_petit_verre)
+
+    def nextPage(self):
+        global count, pompe_number, number_player
+        count += 1
+
+        # create an instance of the ProgressBar page and show it while hiding the current page
+        self.page2 = ProgressBar()
+        self.page2.show()
+        self.hide()
+
+    def mLensecondes(self, doses):
+        """
+        Converts a list of doses in milliliters to a list of doses in seconds at a flow rate of 166 ml/s.
+        """
+        global liste_dosage, temps
+        debit = 110/60
+        temps = round(doses / debit, 3)  # Converts the dose in milliliters to seconds at a flow rate of 166 ml/s
+        return temps
+   
+class Page3(QWidget):
+    def __init__(self):
+        super().__init__()
+        # Set up the user interface
+        self.initUI()
+        # Set the geometry of the widget
+        self.setGeometry(0, -5, 500, 300)
+
+    def initUI(self):
+        # Create a label to display a message to the user
+        label = QLabel("Votre cocktail est prêt")
+        # Create a button for the user to continue to the next page
+        button = QPushButton("continuer")
+
+        # Set up the layout of the page
+        layout = QVBoxLayout()
+        layout.addWidget(label)
+        layout.addWidget(button)
+        self.setLayout(layout)
+
+        # Connect the button to a function to move to the next page
+        button.clicked.connect(self.nextPage)
+
+    def nextPage(self):
+        global count, pompe_number, number_player
+        
+        count += 1  # Increase the count of pages shown
+        
+        self.hide()  # Hide the current page
+        
+        if count < number_player:
+            # If there are more players to go, show the ProgressBar page
+            self.page = ProgressBar()
+            self.page.show()
+            
+        else:
+            # If all players have gone, reset the count and number of players, and show the "C'est fini" label
+            self.count = 0
+            number_player = 0
+            label = QLabel("C'est fini !")
+            layout = QVBoxLayout()
+            layout.addWidget(label)
+            self.setLayout(layout)
+            self.hide()
+
+class HexagonalButton_BeeArsty(QPushButton):
+    def __init__(self, parent=None, radius = 2, text=''):
+        super(HexagonalButton_BeeArsty, self).__init__(parent)
+        self.setStyleSheet("background-color: #FFE900;")
+        self.radius = radius
+        self.setMinimumSize(QSize(3 * self.radius, 3 * self.radius))
+        self.setMaximumSize(QSize(2 * self.radius, 2 * self.radius))
+        self.setMask(self.hex_mask())
+        #texte dans le bouton
+        self.label = QLabel(text, self)
+        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setStyleSheet("color: black;")
+        self.font = QFont()
+        self.font.setPointSize(10)
+        self.label.setFont(self.font)
+        self.label.adjustSize()
+        self.label.move(self.radius - self.label.width() / 2, self.radius - self.label.height() / 2)
+
+
+    
+    def mousePressEvent(self, event):
+        # Call the base class method
+        super().mousePressEvent(event)
+        reset = Accueil().reset_dosage
+        # Open the Page_BeeBuzz window
+        self.page_BeeArtsy = Page_BeeArtsy()
+        self.page_BeeArtsy.show()
+
+
+    def hex_mask(self):
+        path = QPainterPath()
+        for i in range(6):
+            angle_deg = 60 * i
+            angle_rad = math.pi / 180 * angle_deg
+            x = self.radius + self.radius * math.cos(angle_rad)
+            y = self.radius + self.radius * math.sin(angle_rad)
+            if i == 0:
+                path.moveTo(x, y)
+            else:
+                path.lineTo(x, y)
+        path.closeSubpath()
+        region = QRegion(QRect(0, 0, 2 * self.radius, 2 * self.radius), QRegion.Ellipse)
+        region = region.intersected(QRegion(path.toFillPolygon().toPolygon()))
+        return region
+'''
+class BeeArtsy():
+    global ino_add1, arduino_adress_BeeArtsy, BROCHES_POMPES
+    
+    bus = smbus.SMBus(1) 
+    
+    pygame.init()
+    pygame.mixer.pre_init(44100, -16, 2, 2048)
+    pygame.mixer.music.set_volume(0.5)
+    
+    ch1 = pygame.mixer.Channel(1)
+    ch2 = pygame.mixer.Channel(2)
+    ch3 = pygame.mixer.Channel(3)
+    ch4 = pygame.mixer.Channel(4)
+    ch5 = pygame.mixer.Channel(5)
+    ch6 = pygame.mixer.Channel(6)
+    ch7 = pygame.mixer.Channel(7)
+    ch8 = pygame.mixer.Channel(0)
+       
+    soft_bass  = pygame.mixer.Sound("/home/pi/Desktop/max/drum/soft_bass.wav")
+    scratch = pygame.mixer.Sound("/home/pi/Desktop/max/drum/scratch.wav")
+    clap = pygame.mixer.Sound("/home/pi/Desktop/max/drum/clap.wav")
+    bass_hit = pygame.mixer.Sound("/home/pi/Desktop/max/drum/bass_hit_c.wav")
+    pierce = pygame.mixer.Sound("/home/pi/Desktop/max/drum/pierce.wav")
+    cricket = pygame.mixer.Sound("/home/pi/Desktop/max/drum/two_crickets.wav")
+    cymb = pygame.mixer.Sound("/home/pi/Desktop/max/drum/elec_cymbal.wav")
+    #bass = pygame.mixer.Sound("")
+
+    apl = pygame.mixer.Sound("/home/pi/Desktop/max/drinks/apljuice.wav")
+    limon = pygame.mixer.Sound("/home/pi/Desktop/max/drinks/limoncelloooooo.wav")
+    oranj = pygame.mixer.Sound("/home/pi/Desktop/max/drinks/orenjuicee.wav")
+    tequila = pygame.mixer.Sound("/home/pi/Desktop/max/drinks/tequiilaaaaa.wav")
+    vodka = pygame.mixer.Sound("/home/pi/Desktop/max/drinks/vodkaa.wav")
+    whiskey = pygame.mixer.Sound("/home/pi/Desktop/max/drinks/whiskeyyyyyyy.wav")
+ 
+    nuj = pygame.mixer.Sound("/home/pi/Desktop/max/nujabes.wav")
+
+    def byte_to_str(self,b):
+    	string = ''
+    	for x in b:
+    		string += str(x)
+    	return string
+    
+    def keyz(self,key):
+        random_number = random.randint(1, 15)
+        if key == "0":
+            print("ligma")
+        elif key == "1":
+            print("11")
+            ch1.play(soft_bass)
+            time.sleep(0.0001)
+        elif key == "2":
+            print("12")
+            ch3.play(scratch)	
+            time.sleep(0.0001)
+        elif key == "3":
+            print("13")
+            ch7.play(apl)
+            time.sleep(0.0001)
+        elif key == "4":
+            print("14")
+            ch6.play(limon)
+            time.sleep(0.0001)
+        elif key == "5":
+            print("21")
+            ch2.play(clap)
+            time.sleep(0.0001)
+        elif key == "6":
+            print("22")
+            ch4.play(bass_hit)
+            time.sleep(0.0001)
+        elif key == "7":
+            print("23")
+            ch1.play(oranj)
+            time.sleep(0.0001)		
+        elif key == "8":
+            print("24")
+            ch2.play(tequila)
+            time.sleep(0.0001)
+        elif key == "9":
+            print("31")
+            ch6.play(cricket)
+            time.sleep(0.0001)
+        elif key == "A":
+            print("32")
+            ch5.play(pierce)
+            time.sleep(0.0001)
+        elif key == "B":
+            print("33")
+            ch4.play(vodka)
+            time.sleep(0.0001)
+        elif key == "C":
+            print("34")
+            ch7.play(whiskey)
+            time.sleep(0.0001)
+        elif key == "D":
+            print("41")
+            ch8.play(cymb)
+            time.sleep(0.0001)
+        elif key == "E":	#doesnt exist!!
+            print("42")
+    		#doesnt exist!!
+        elif key == "F":
+            print("43")
+            ch3.play(nuj, maxtime=10000)
+            time.sleep(0.0001)
+        elif key == "G":
+            print("44")
+        else:
+            print("wrong key boss")	
+        self.code_alcool_broche(BROCHES_POMPES[f"pompe{random_number}"], liste_dosage[i])
+    
+    while True:
+        try:
+            val = bus.read_i2c_block_data(ino_add1,0x00, 1)
+            time.sleep(0.01)
+            value = val[0] 
+            key = chr(value)
+            keyz(key)
+        except:
+            print("theres an error somewhere boss")
+            time.sleep(0.5)    
+    
+    ch3.play(nuj, maxtime=18000)
+    print("nuj is live")
+
+
+    def convertStrtoBytes(self,src):
+        converted = []
+        for b in src:
+            converted.append(ord(b))
+        return converted
+       
+    def envoie(self,string, adresse):
+        bytestosend = convertStrtoBytes(string)
+        bus.write_i2c_block_data(adresse, len(string), bytestosend)
+       
+    def allumage_broches_LH(self, gpio_pin_durations):
+        def set_pin_high(pin, duration):
+            GPIO.output(pin, 1)  # Set the pin to HIGH
+            time.sleep(duration)  # Wait for the specified duration
+            GPIO.output(pin, 0)  # Set the pin back to LOW
+    
+        # Configure the GPIO pins as outputs and initially set them to LOW
+        for pin, _ in gpio_pin_durations:
+            GPIO.setup(int(pin), GPIO.OUT, initial=GPIO.LOW)
+    
+        # Create and start the threads for each GPIO pin
+        threads = []
+        for pin, duration in gpio_pin_durations:
+            thread = threading.Thread(target=set_pin_high, args=(int(pin), int(duration)))
+            thread.start()
+            threads.append(thread)
+    
+        # Wait for all threads to finish
+        for thread in threads:
+            thread.join()
+        return
+    
+    def code_alcool_broche(self, temps):
+        gpio_pin_durations = []
+    
+        for (name, pin) in BROCHES_POMPES.items():
+            gpio_pin_durations.append((pin, 5))
+    
+        self.allumage_broches_LH(gpio_pin_durations)
+        return
+'''
+class Page_BeeArtsy(QMainWindow):
+    def __init__(self):
+        super().__init__()
+
+        # Créer le label "BeeArtsy"
+        label1 = QLabel("BeeArtsy")
+        label1.setStyleSheet("font-size: 25pt; font-weight: bold; color: #FFC84B;font-family: Times;")
+        label1.setAlignment(Qt.AlignCenter)
+
+
+        # Créer le label "Description"
+        description_text = "Play with the piano tiles on the side and you will activate pumps randomly to make a cocktail. let see if you have any luck"
+        label2 = QLabel(description_text)
+        label2.setStyleSheet("font-size: 18pt;")
+
+        #creation du bouton retour
+        self.button_cancel = QPushButton("Back", self)
+        self.button_cancel.clicked.connect(self.page_accueil)
+        self.button_cancel.setStyleSheet("text-align:center;")
+        
+        #creation du bouton confirmer
+        self.button_conf = QPushButton("Confirm", self)
+        self.button_conf.clicked.connect(self.confirm)
+        self.button_conf.setStyleSheet("text-align:center;")
+        
+        # Créer le layout horizontal pour la position du bouton
+        hbox = QHBoxLayout()
+        hbox.addStretch(1)  # Ajouter un espace extensible avant le bouton
+        hbox.addWidget(self.button_cancel) # ajoute le bouton confirmer 
+        hbox.addWidget(self.button_conf) # ajoute le bouton cancel
+        
+        # Créer le layout vertical et ajouter les widgets
+        vbox = QVBoxLayout()
+        vbox.addWidget(label1)
+        vbox.addWidget(label2)
+        vbox.addLayout(hbox)  # Ajouter le layout horizontal contenant le bouton
+
+        # Créer un widget pour contenir le layout
+        widget = QWidget()
+        widget.setLayout(vbox)
+
+        # Définir le widget comme widget central de la fenêtre
+        self.setCentralWidget(widget)
+
+        self.setGeometry(0, -5, 500, 300)
+        self.setWindowTitle("BeeArtsy")
+        self.show()
+        
+    def page_accueil(self):
+    # Cache la page actuelle
+        self.hide()
+        
+    def confirm(self):
+    # envoie de le go pour activer BeeArtsy
+        self.gogogo = BeeArtsy() # creates a new instance of a class named "BeeArtsy"
+        self.BeeArtsy.show() # shows the newly created page.
+        self.hide() # hides the current page.
+        return
+
+class HexagonalButton_BeeThirsty(QPushButton):
+    global liste_dosage
+    
+    def __init__(self, parent=None, radius = 2, text=''):
+        super(HexagonalButton_BeeThirsty, self).__init__(parent)
+        
+        # Set the button's background color
+        self.setStyleSheet("background-color: #FFE900;")
+        
+        # Set the button's radius and size
+        self.radius = radius
+        self.setMinimumSize(QSize(3 * self.radius, 3 * self.radius))
+        self.setMaximumSize(QSize(2 * self.radius, 2 * self.radius))
+        
+        # Set the button's mask to a hexagon shape
+        self.setMask(self.hex_mask())
+        
+        # Add label with text to the center of the button
+        self.label = QLabel(text, self)
+        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setStyleSheet("color: black;")
+        self.font = QFont()
+        self.font.setPointSize(10)
+        self.label.setFont(self.font)
+        self.label.adjustSize()
+        self.label.move(self.radius - self.label.width() / 2, self.radius - self.label.height() / 2)
+
+    def mousePressEvent(self, event):
+        # Call the base class method
+        super().mousePressEvent(event)
+                
+        # Create an instance of the Accueil class
+        accueil_instance = Accueil()
+        
+        # Call the reset_dosage method of the Accueil instance
+        accueil_instance.reset_dosage()
+
+        self.page_alcool = Page_alcool_Beethirsty()
+        self.page_alcool.show()
+        
+    def hex_mask(self):
+        # This method creates a hexagonal mask for a QLabel
+        path = QPainterPath() # Create a QPainterPath object to define the hexagon shape
+        for i in range(6):
+            angle_deg = 60 * i
+            angle_rad = math.pi / 180 * angle_deg
+            # Calculate the x and y coordinates for each point on the hexagon
+            x = self.radius + self.radius * math.cos(angle_rad)
+            y = self.radius + self.radius * math.sin(angle_rad)
+            # If this is the first point, move to it. Otherwise, draw a line to it.
+            if i == 0:
+                path.moveTo(x, y)
+            else:
+                path.lineTo(x, y)
+        # Close the path to complete the hexagon shape
+        path.closeSubpath()
+        # Create a circular region the size of the QLabel
+        region = QRegion(QRect(0, 0, 2 * self.radius, 2 * self.radius), QRegion.Ellipse)
+        # Intersect the circular region with the hexagon path to create the final mask
+        region = region.intersected(QRegion(path.toFillPolygon().toPolygon()))
+        # Return the resulting region mask
+        return region
+
+class Page_alcool_Beethirsty(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.initUI()
+
+    def initUI(self):
+        global text_a, text_b, text_c, text_d, text_e, text_f, text_g, text_h, liste_nom, liste_dosage, taille_grand_verre
+        
+        # Définition des noms des alcools à partir de la liste "liste_nom"
+        text_a = liste_nom[0]
+        text_b = liste_nom[1]
+        text_c = liste_nom[2]
+        text_d = liste_nom[3]
+        text_e = liste_nom[4]
+        text_f = liste_nom[5]
+        text_g = liste_nom[6]
+        text_h = liste_nom[7]
+        
+        # Création d'un widget de défilement pour contenir les widgets
+        self.scroll = QScrollArea(self)
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+
+        # Création d'un widget qui sera ajouté au widget de défilement
+        content_widget = QWidget(self.scroll)
+        self.scroll.setWidget(content_widget)
+
+        # Création d'un layout vertical pour contenir les lignes de widgets
+        vbox = QVBoxLayout(content_widget)
+
+        # Création des 6 lignes de widgets avec des layouts horizontaux
+        ligne1 = QHBoxLayout()
+        ligne2 = QHBoxLayout()
+        ligne3 = QHBoxLayout()
+        ligne4 = QHBoxLayout()
+        ligne5 = QHBoxLayout()
+        ligne6 = QHBoxLayout()
+        
+        # Création d'un QLabel pour afficher le message d'invite de sélection d'alcool
+        label = QLabel("Choisissez votre alcool", self)
+        label.setAlignment(Qt.AlignCenter)
+        ligne1.addWidget(label)
+        if text_a != "":
+            self.hexagon_label2_1 = HexagonLabel(self) # Création d'un HexagonLabel pour afficher une valeur de slider
+            slider2_1 = QSlider(self) # Création d'un QSlider pour sélectionner une valeur
+            slider2_1.setObjectName(text_a) # Définition d'un nom d'objet pour le QSlider
+            self.hexagon_label2_1.slider_name = slider2_1.objectName() # Ajout du nom d'objet du QSlider à l'HexagonLabel correspondant
+            ligne2.addWidget(self.hexagon_label2_1) # Ajout de l'HexagonLabel à la deuxième ligne du layout principal
+            slider2_1.setOrientation(Qt.Horizontal) # Définition de l'orientation du slider
+            slider2_1.setRange(0, 100) # Définition des valeurs min et max pour le slider
+            slider2_1.sliderReleased.connect(self.sliderReleased_alcool) # Connexion de l'événement sliderReleased à une méthode de l'objet parent
+            ligne2.addWidget(slider2_1) # Ajout du QSlider à la deuxième ligne du layout principal
+        if text_b != "":
+            self.hexagon_label2_2 = HexagonLabel(self)  # Crée une instance de HexagonLabel avec l'objet self comme parent
+            slider2_2 = QSlider(self)  # Crée une instance de QSlider avec l'objet self comme parent
+            slider2_2.setObjectName(text_b)  # Définit le nom de l'objet pour le slider
+            self.hexagon_label2_2.slider_name = slider2_2.objectName()  # Stocke le nom de l'objet slider dans la propriété "slider_name" de l'objet HexagonLabel
+            ligne2.addWidget(self.hexagon_label2_2)  # Ajoute l'objet HexagonLabel dans la ligne 2 du layout "ligne2"
+            slider2_2.setOrientation(Qt.Horizontal)  # Définit l'orientation du slider en horizontal
+            slider2_2.setRange(0, 100)  # Définit les limites minimale et maximale pour la plage de valeurs du slider
+            slider2_2.sliderReleased.connect(self.sliderReleased_alcool)  # Connecte l'événement "sliderReleased" à la méthode "sliderReleased_alcool" de l'objet parent
+            ligne2.addWidget(slider2_2)  # Ajoute le slider dans la ligne 2 du layout "ligne2"
+        if text_c != "":        
+            self.hexagon_label3_1 = HexagonLabel(self)  # Crée une instance de HexagonLabel avec l'objet self comme parent
+            slider3_1 = QSlider(self)  # Crée une instance de QSlider avec l'objet self comme parent
+            slider3_1.setObjectName(text_c)  # Définit le nom de l'objet pour le slider
+            self.hexagon_label3_1.slider_name = slider3_1.objectName()  # Stocke le nom de l'objet slider dans la propriété "slider_name" de l'objet HexagonLabel
+            ligne3.addWidget(self.hexagon_label3_1)  # Ajoute l'objet HexagonLabel dans la ligne 3 du layout "ligne3"
+            slider3_1.setOrientation(Qt.Horizontal)  # Définit l'orientation du slider en horizontal
+            slider3_1.setRange(0, 100)  # Définit les limites minimale et maximale pour la plage de valeurs du slider
+            slider3_1.sliderReleased.connect(self.sliderReleased_alcool)  # Connecte l'événement "sliderReleased" à la méthode "sliderReleased_alcool" de l'objet parent
+            ligne3.addWidget(slider3_1)  # Ajoute le slider dans la ligne 3 du layout "ligne3"
+        if text_d != "":
+            self.hexagon_label3_2 = HexagonLabel(self) # Crée une nouvelle instance de HexagonLabel avec "self" comme parent et l'affecte à la variable "self.hexagon_label3_2"
+            slider3_2 = QSlider(self) # Crée une nouvelle instance de QSlider avec "self" comme parent et l'affecte à la variable "slider3_2"
+            slider3_2.setObjectName(text_d) # Définit le nom de l'objet de "slider3_2" en utilisant la valeur de "text_d"
+            self.hexagon_label3_2.slider_name = slider3_2.objectName() # Affecte le nom de l'objet de "slider3_2" à l'attribut "slider_name" de "self.hexagon_label3_2"
+            ligne3.addWidget(self.hexagon_label3_2) # Ajoute "self.hexagon_label3_2" à la grille de la ligne 3
+            slider3_2.setOrientation(Qt.Horizontal) # Définit l'orientation de "slider3_2" à horizontale
+            slider3_2.setRange(0, 100) # Définit la plage de valeurs de "slider3_2" de 0 à 100
+            slider3_2.sliderReleased.connect(self.sliderReleased_alcool) # Connecte le signal "sliderReleased" de "slider3_2" à la méthode "sliderReleased_alcool" de "self"
+            ligne3.addWidget(slider3_2) # Ajoute "slider3_2" à la grille de la ligne 3
+        if text_e != "":
+            self.hexagon_label4_1 = HexagonLabel(self) # Crée une nouvelle instance de HexagonLabel avec "self" comme parent et l'affecte à la variable "self.hexagon_label4_1"
+            slider4_1 = QSlider(self) # Crée une nouvelle instance de QSlider avec "self" comme parent et l'affecte à la variable "slider4_1"
+            slider4_1.setObjectName(text_e) # Définit le nom de l'objet de "slider4_1" en utilisant la valeur de "text_e"
+            self.hexagon_label4_1.slider_name = slider4_1.objectName() # Affecte le nom de l'objet de "slider4_1" à l'attribut "slider_name" de "self.hexagon_label4_1"
+            ligne4.addWidget(self.hexagon_label4_1) # Ajoute "self.hexagon_label4_1" à la grille de la ligne 4
+            slider4_1.setOrientation(Qt.Horizontal) # Définit l'orientation de "slider4_1" à horizontale
+            slider4_1.setRange(0, 100) # Définit la plage de valeurs de "slider4_1" de 0 à 100
+            slider4_1.sliderReleased.connect(self.sliderReleased_alcool) # Connecte le signal "sliderReleased" de "slider4_1" à la méthode "sliderReleased_alcool" de "self"
+            ligne4.addWidget(slider4_1) # Ajoute "slider4_1" à la grille de la ligne 4
+        if text_f != "":
+            self.hexagon_label4_2 = HexagonLabel(self) # Création d'une instance de HexagonLabel et assignation à la variable self.hexagon_label4_2
+            slider4_2 = QSlider(self) # Création d'une instance de QSlider et assignation à la variable slider4_2
+            slider4_2.setObjectName(text_f) # Assignation de l'objet text_f comme nom d'objet pour le slider4_2
+            self.hexagon_label4_2.slider_name = slider4_2.objectName() # Assignation du nom d'objet de slider4_2 à self.hexagon_label4_2.slider_name
+            ligne4.addWidget(self.hexagon_label4_2) # Ajout de self.hexagon_label4_2 à la ligne 4
+            slider4_2.setOrientation(Qt.Horizontal) # Définition de l'orientation du slider4_2 comme horizontal
+            slider4_2.setRange(0, 100) # Définition de la plage de valeurs pour slider4_2 de 0 à 100
+            slider4_2.sliderReleased.connect(self.sliderReleased_alcool) # Connexion de l'événement sliderReleased de slider4_2 à la fonction self.sliderReleased_alcool
+            ligne4.addWidget(slider4_2) # Ajout de slider4_2 à la ligne 4
+        if text_g != "":
+            self.hexagon_label5_1 = HexagonLabel(self) # Création d'une instance de HexagonLabel et assignation à la variable self.hexagon_label5_1
+            slider5_1 = QSlider(self) # Création d'une instance de QSlider et assignation à la variable slider5_1
+            slider5_1.setObjectName(text_g) # Assignation de l'objet text_g comme nom d'objet pour le slider5_1
+            self.hexagon_label5_1.slider_name = slider5_1.objectName() # Assignation du nom d'objet de slider5_1 à self.hexagon_label5_1.slider_name
+            ligne5.addWidget(self.hexagon_label5_1) # Ajout de self.hexagon_label5_1 à la ligne 5
+            slider5_1.setOrientation(Qt.Horizontal) # Définition de l'orientation du slider5_1 comme horizontal
+            slider5_1.setRange(0, 100) # Définition de la plage de valeurs pour slider5_1 de 0 à 100
+            slider5_1.sliderReleased.connect(self.sliderReleased_alcool) # Connexion de l'événement sliderReleased de slider5_1 à la fonction self.sliderReleased_alcool
+            ligne5.addWidget(slider5_1) # Ajout de slider5_1 à la ligne 5
+        if text_h != "":
+            self.hexagon_label5_2 = HexagonLabel(self) # Création d'une instance de HexagonLabel et assignation à la variable self.hexagon_label5_2
+            slider5_2 = QSlider(self) # Création d'une instance de QSlider et assignation à la variable slider5_2
+            slider5_2.setObjectName(text_h) # Assignation de l'objet text_h comme nom d'objet pour le slider5_2
+            self.hexagon_label5_2.slider_name = slider5_2.objectName() # Assignation du nom d'objet de slider5_2 à self.hexagon_label5_2.slider_name
+            ligne5.addWidget(self.hexagon_label5_2) # Ajout de self.hexagon_label5_2 à la ligne 5
+            slider5_2.setOrientation(Qt.Horizontal) # Définition de l'orientation
+            slider5_2.setRange(0, 100)  # Définit la plage de valeurs pour le slider5_2
+            slider5_2.sliderReleased.connect(self.sliderReleased_alcool)  # Connecte l'événement sliderReleased à la méthode sliderReleased_alcool de l'objet self
+            ligne5.addWidget(slider5_2)  # Ajoute le widget slider5_2 à la layout ligne5 de l'objet self
+        
+        self.button_confirmation = QPushButton("Confirm", self) # Crée un bouton avec le texte "Confirm" et l'assigne à l'attribut "button_confirmation" de l'objet actuel.
+        self.button_confirmation.setStyleSheet("text-align:center;") # Définit la feuille de style du bouton "button_confirmation" pour centrer le texte.
+        self.button_confirmation.clicked.connect(self.open_page_soft) # Connecte l'événement "clicked" du bouton "button_confirmation" à la méthode "open_page_soft" de l'objet actuel.
+        
+        self.button_cancel = QPushButton("Cancel", self) # Crée un bouton avec le texte "Cancel" et l'assigne à l'attribut "button_cancel" de l'objet actuel.
+        self.button_cancel.clicked.connect(self.open_page_accueil) # Connecte l'événement "clicked" du bouton "button_cancel" à la méthode "open_page_accueil" de l'objet actuel.
+        self.button_cancel.setStyleSheet("text-align:center;") # Définit la feuille de style du bouton "button_cancel" pour centrer le texte.
+        
+        ligne6.addWidget(self.button_cancel) # Ajoute le bouton "button_cancel" à la sixième ligne d'un QGridLayout nommé "ligne6".
+        ligne6.addWidget(self.button_confirmation) # Ajoute le bouton "button_confirmation" à la sixième ligne d'un QGridLayout nommé "ligne6".
+        ligne6.setAlignment(Qt.AlignRight) # Définit l'alignement de la sixième ligne de "ligne6" à droite.
+        
+        vbox.addLayout(ligne1) # Ajoute la première ligne de "ligne1" à un QVBoxLayout nommé "vbox".
+        vbox.addLayout(ligne2) # Ajoute la première ligne de "ligne2" à "vbox".
+        vbox.addLayout(ligne3) # Ajoute la première ligne de "ligne3" à "vbox".
+        vbox.addLayout(ligne4) # Ajoute la première ligne de "ligne4" à "vbox".
+        vbox.addLayout(ligne5) # Ajoute la première ligne de "ligne5" à "vbox".
+        vbox.addLayout(ligne6) # Ajoute la première ligne de "ligne6" à "vbox".
+        
+        content_widget.setLayout(vbox) # Définit le layout de "content_widget" à "vbox".
+        
+        main_layout = QVBoxLayout(self) # Crée un QVBoxLayout nommé "main_layout" avec l'objet actuel comme parent.
+        main_layout.addWidget(self.scroll) # Ajoute le widget "scroll" à "main_layout".
+        self.setLayout(main_layout) # Définit le layout de l'objet actuel à "main_layout".
+        
+        self.setGeometry(0, -5, 500, 300) # Définit la position et la taille de la fenêtre.
+        self.setWindowTitle('Hexagon and Slider') # Définit le titre de la fenêtre.
+        self.show() # Affiche la fenêtre.
+
+        
+    def sliderReleased_alcool(self):
+        # This line defines a function named "sliderReleased_alcool" that takes "self" as an argument.
+        sender_name = self.sender().objectName() # This line gets the object name of the widget that triggered the event that called the function.
+        dosage = self.sender().value() # This line gets the current value of the widget that triggered the event that called the function.
+        
+        ''' These lines check the object name of the widget that triggered the event against a set of 
+        pre-defined text strings (text_a, text_b, etc.), and if there is a match, the corresponding 
+        element in a list (liste_pourcentage) is updated with the current value of the widget.'''
+        
+        if f"{sender_name}" == str(text_a):
+            liste_pourcentage[0] = int(dosage)
+        elif f"{sender_name}" == str(text_b):
+            liste_pourcentage[1] = int(dosage)
+        elif f"{sender_name}" == str(text_c):
+            liste_pourcentage[2] = int(dosage)
+        elif f"{sender_name}" == str(text_d):
+            liste_pourcentage[3] = int(dosage)
+        elif f"{sender_name}" == str(text_e):
+            liste_pourcentage[4] = int(dosage)
+        elif f"{sender_name}" == str(text_f):
+            liste_pourcentage[5] = int(dosage)
+        elif f"{sender_name}" == str(text_g):
+            liste_pourcentage[6] = int(dosage)
+        elif f"{sender_name}" == str(text_h):
+            liste_pourcentage[7] = int(dosage)
+        return liste_pourcentage # This line returns the updated list of dosage values.
+
+        
+    def open_page_soft(self):
+        # defines a function named "open_page_soft" that takes "self" as an argument.
+        self.page_soft = Page_soft_Beethirsty() # creates a new instance of a class named "Page_soft_Beethirsty" and assigns it to an attribute named "page_soft" of the current object.
+        self.page_soft.show() # shows the newly created page.
+        self.hide() # hides the current page.
+    
+    def open_page_accueil(self):
+        self.hide()  # hides the current page to show the page d'accueil
+
+class Page_soft_Beethirsty(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.initUI()
+
+    def initUI(self):
+        global  text_i, text_j, text_k, text_l, text_m, text_n, text_o, text_p, liste_nom, liste_dosage, taille_grand_verre
+        
+        # Initialisation des variables globales avec les noms des ingrédients des boissons non-alcoolisées
+        text_i = liste_nom[8]
+        text_j = liste_nom[9]
+        text_k = liste_nom[10]
+        text_l = liste_nom[11]
+        text_m = liste_nom[12]
+        text_n = liste_nom[13]
+        text_o = liste_nom[14]
+        text_p = liste_nom[15]
+        
+        # Initialisation de la zone de défilement
+        self.scroll = QScrollArea(self)
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+
+        # Initialisation du contenu de la zone de défilement
+        content_widget = QWidget(self.scroll)
+        self.scroll.setWidget(content_widget)
+
+        # Initialisation du layout vertical
+        vbox = QVBoxLayout(content_widget)
+
+        # Initialisation des layouts horizontaux
+        ligne1 = QHBoxLayout()
+        ligne2 = QHBoxLayout()
+        ligne3 = QHBoxLayout()
+        ligne4 = QHBoxLayout()
+        ligne5 = QHBoxLayout()
+        ligne6 = QHBoxLayout()
+
+        
+        label = QLabel("Choisissez votre soft", self) # Création d'un QLabel avec un texte et un parent
+        label.setAlignment(Qt.AlignCenter) # Alignement du texte du QLabel au centre
+        ligne1.addWidget(label) # Ajout du QLabel à une ligne dans le layout
+        
+        if text_i != "":
+            self.hexagon_label2_1 = HexagonLabel(self) # Création d'un objet HexagonLabel personnalisé avec un parent
+            slider2_1 = QSlider(self) # Création d'un objet QSlider avec un parent
+            slider2_1.setObjectName(text_i) # Définition d'un nom unique pour l'objet QSlider
+            self.hexagon_label2_1.slider_name = slider2_1.objectName() # Enregistrement du nom de l'objet QSlider dans l'objet HexagonLabel personnalisé
+            ligne2.addWidget(self.hexagon_label2_1) # Ajout de l'objet HexagonLabel personnalisé à une ligne dans le layout
+            slider2_1.setOrientation(Qt.Horizontal) # Définition de l'orientation du slider à horizontal
+            slider2_1.setRange(0, 100) # Définition de la plage de valeurs possibles pour le slider
+            slider2_1.sliderReleased.connect(self.sliderReleased_soft) # Connexion du signal sliderReleased du slider à une méthode appelée lors du relâchement du slider
+            ligne2.addWidget(slider2_1) # Ajout du slider à une ligne dans le layout
+        if text_j != "":
+            self.hexagon_label2_2 = HexagonLabel(self) # Crée un objet HexagonLabel avec le parent actuel (self) et l'enregistre dans l'attribut hexagon_label2_2
+            slider2_2 = QSlider(self) # Crée un objet QSlider avec le parent actuel (self) et l'enregistre dans la variable slider2_2
+            slider2_2.setObjectName(text_j) # Définit le nom de l'objet slider2_2 en utilisant la valeur de la variable text_j
+            self.hexagon_label2_2.slider_name = slider2_2.objectName() # Enregistre le nom de l'objet slider2_2 dans l'attribut slider_name de l'objet hexagon_label2_2
+            ligne2.addWidget(self.hexagon_label2_2) # Ajoute l'objet hexagon_label2_2 au layout ligne2
+            slider2_2.setOrientation(Qt.Horizontal) # Définit l'orientation de l'objet slider2_2 à Horizontal
+            slider2_2.setRange(0, 100) # Définit la plage de valeurs de l'objet slider2_2 de 0 à 100
+            slider2_2.sliderReleased.connect(self.sliderReleased_soft) # Connecte l'événement sliderReleased de l'objet slider2_2 à la méthode sliderReleased_soft de l'objet actuel (self)
+            ligne2.addWidget(slider2_2) # Ajoute l'objet slider2_2 au layout ligne2
+        if text_k != "":
+            self.hexagon_label3_1 = HexagonLabel(self) # Crée un objet HexagonLabel avec le parent actuel (self) et l'enregistre dans l'attribut hexagon_label3_1
+            slider3_1 = QSlider(self) # Crée un objet QSlider avec le parent actuel (self) et l'enregistre dans la variable slider3_1
+            slider3_1.setObjectName(text_k) # Définit le nom de l'objet slider3_1 en utilisant la valeur de la variable text_k
+            self.hexagon_label3_1.slider_name = slider3_1.objectName() # Enregistre le nom de l'objet slider3_1 dans l'attribut slider_name de l'objet hexagon_label3_1
+            ligne3.addWidget(self.hexagon_label3_1) # Ajoute l'objet hexagon_label3_1 au layout ligne3
+            slider3_1.setOrientation(Qt.Horizontal) # Définit l'orientation de l'objet slider3_1 à Horizontal
+            slider3_1.setRange(0, 100) # Définit la plage de valeurs de l'objet slider3_1 de 0 à 100
+            slider3_1.sliderReleased.connect(self.sliderReleased_soft) # Connecte l'événement sliderReleased de l'objet slider3_1 à la méthode sliderReleased_soft de l'objet actuel (self)
+            ligne3.addWidget(slider3_1) # Ajoute l'objet slider3_1 au layout ligne3
+        if text_l != "":
+            self.hexagon_label3_2 = HexagonLabel(self) # Crée un objet HexagonLabel
+            slider3_2 = QSlider(self) # Crée un objet QSlider
+            slider3_2.setObjectName(text_l) # Définit le nom de l'objet QSlider
+            self.hexagon_label3_2.slider_name = slider3_2.objectName() # Affecte le nom de l'objet QSlider à une propriété de l'objet HexagonLabel
+            ligne3.addWidget(self.hexagon_label3_2) # Ajoute l'objet HexagonLabel au layout de la ligne 3
+            slider3_2.setOrientation(Qt.Horizontal) # Définit l'orientation de l'objet QSlider
+            slider3_2.setRange(0, 100) # Définit la plage de valeurs de l'objet QSlider
+            slider3_2.sliderReleased.connect(self.sliderReleased_soft) # Connecte le signal "sliderReleased" de l'objet QSlider à une méthode de l'objet parent
+            ligne3.addWidget(slider3_2) # Ajoute l'objet QSlider au layout de la ligne 3
+        if text_m != "":
+            self.hexagon_label4_1 = HexagonLabel(self) # Crée un nouveau HexagonLabel
+            slider4_1 = QSlider(self) # Crée un nouveau QSlider
+            slider4_1.setObjectName(text_m) # Définit le nom d'objet du QSlider
+            self.hexagon_label4_1.slider_name = slider4_1.objectName() # Définit le nom du slider de l'HexagonLabel à celui du QSlider
+            ligne4.addWidget(self.hexagon_label4_1) # Ajoute l'HexagonLabel dans la ligne 4 du layout
+            slider4_1.setOrientation(Qt.Horizontal) # Définit l'orientation du QSlider en horizontal
+            slider4_1.setRange(0, 100) # Définit la plage de valeurs du QSlider
+            slider4_1.sliderReleased.connect(self.sliderReleased_soft) # Connecte la signal sliderReleased du QSlider à la fonction sliderReleased_soft
+            ligne4.addWidget(slider4_1) # Ajoute le QSlider dans la ligne 4 du layout
+        if text_n != "":
+            self.hexagon_label4_2 = HexagonLabel(self) # Crée un nouveau HexagonLabel
+            slider4_2 = QSlider(self) # Crée un nouveau QSlider
+            slider4_2.setObjectName(text_n) # Définit le nom d'objet du QSlider
+            self.hexagon_label4_2.slider_name = slider4_2.objectName() # Définit le nom du slider de l'HexagonLabel à celui du QSlider
+            ligne4.addWidget(self.hexagon_label4_2) # Ajoute l'HexagonLabel dans la ligne 4 du layout
+            slider4_2.setOrientation(Qt.Horizontal) # Définit l'orientation du QSlider en horizontal
+            slider4_2.setRange(0, 100) # Définit la plage de valeurs du QSlider
+            slider4_2.sliderReleased.connect(self.sliderReleased_soft) # Connecte la signal sliderReleased du QSlider à la fonction sliderReleased_soft
+            ligne4.addWidget(slider4_2) # Ajoute le QSlider dans la ligne 4 du layout
+        if text_o != "":
+            self.hexagon_label5_1 = HexagonLabel(self) # Crée un nouveau HexagonLabel
+            slider5_1 = QSlider(self) # Crée un nouveau QSlider
+            slider5_1.setObjectName(text_o) # Définit le nom d'objet du QSlider
+            self.hexagon_label5_1.slider_name = slider5_1.objectName() # Définit le nom du slider de l'HexagonLabel à celui du QSlider
+            ligne5.addWidget(self.hexagon_label5_1) # Ajoute l'HexagonLabel dans la ligne 5 du layout
+            slider5_1.setOrientation(Qt.Horizontal) # Définit l'orientation du QSlider en horizontal
+            slider5_1.setRange(0, 100) # Définit la plage de valeurs du QSlider
+            slider5_1.sliderReleased.connect(self.sliderReleased_soft) # Connecte la signal sliderReleased du QSlider à la fonction sliderReleased_soft
+            ligne5.addWidget(slider5_1) # Ajoute le QSlider dans la ligne 5 du layout
+        if text_p != "":
+            self.hexagon_label5_2 = HexagonLabel(self) # Création d'un objet HexagonLabel
+            slider5_2 = QSlider(self) # Création d'un objet QSlider
+            slider5_2.setObjectName(text_p) # Définition de l'attribut "objectName" de l'objet QSlider
+            self.hexagon_label5_2.slider_name = slider5_2.objectName() # Assignation du nom de l'objet QSlider à l'attribut "slider_name" de l'objet HexagonLabel
+            ligne5.addWidget(self.hexagon_label5_2) # Ajout de l'objet HexagonLabel à la sixième ligne de la grille "vbox"
+            slider5_2.setOrientation(Qt.Horizontal) # Définition de l'orientation de l'objet QSlider
+            slider5_2.setRange(0, 100) # Définition de la plage de valeurs possibles pour l'objet QSlider
+            slider5_2.sliderReleased.connect(self.sliderReleased_soft) # Connexion de l'événement "sliderReleased" de l'objet QSlider à la fonction "sliderReleased_soft"
+            ligne5.addWidget(slider5_2) # Ajout de l'objet QSlider à la sixième ligne de la grille "vbox"
+       
+        self.button_confirmation = QPushButton("Confirmer", self)  # Création d'un bouton nommé "Confirmer"
+        self.button_confirmation.clicked.connect(self.open_page_progress)  # Connexion du signal "clicked" à la méthode "open_page_progress"
+        self.button_confirmation.setStyleSheet("text-align:center;")  # Application de la feuille de style CSS au bouton pour centrer le texte
+        
+        self.button_cancel = QPushButton("Cancel", self)  # Création d'un bouton nommé "Cancel"
+        self.button_cancel.clicked.connect(self.open_page_accueil)  # Connexion du signal "clicked" à la méthode "open_page_accueil"
+        self.button_cancel.setStyleSheet("text-align:center;")  # Application de la feuille de style CSS au bouton pour centrer le texte
+        
+        ligne6.addWidget(self.button_cancel)  # Ajout du bouton "Cancel" à la sixième ligne du layout
+        ligne6.addWidget(self.button_confirmation)  # Ajout du bouton "Confirmer" à la sixième ligne du layout
+        ligne6.setAlignment(Qt.AlignRight)  # Alignement de la sixième ligne à droite
+        
+        vbox.addLayout(ligne1)  # Ajout de la première ligne au layout vertical
+        vbox.addLayout(ligne2)  # Ajout de la deuxième ligne au layout vertical
+        vbox.addLayout(ligne3)  # Ajout de la troisième ligne au layout vertical
+        vbox.addLayout(ligne4)  # Ajout de la quatrième ligne au layout vertical
+        vbox.addLayout(ligne5)  # Ajout de la cinquième ligne au layout vertical
+        vbox.addLayout(ligne6)  # Ajout de la sixième ligne au layout vertical
+        
+        content_widget.setLayout(vbox)  # Définition du layout vertical pour le widget content_widget
+        
+        main_layout = QVBoxLayout(self)  # Création d'un layout vertical pour la fenêtre principale
+        main_layout.addWidget(self.scroll)  # Ajout du widget "scroll" au layout principal
+        self.setLayout(main_layout)  # Définition du layout principal pour la fenêtre
+        
+        self.setGeometry(0, -5, 500, 300) # Définition de la position et de la taille de la fenêtre
+        self.setWindowTitle('Hexagon and Slider')  # Définition du titre de la fenêtre
+        self.show()  # Affichage de la fenêtre
+
+    def sliderReleased_soft(self): # Définition de la fonction sliderReleased_soft qui prend en argument un objet self
+        sender_name = self.sender().objectName() # Récupération du nom de l'objet déclenchant l'événement et stockage dans la variable sender_name
+        dosage = self.sender().value() # Récupération de la valeur du slider déclenchant l'événement et stockage dans la variable dosage
+        if f"{sender_name}" == str(text_i): # Si le nom de l'objet est égal à text_i (un identifiant donné à un slider), alors :
+            liste_pourcentage[8] = int(dosage) # Stocker la valeur de dosage dans la liste_dosage à l'index 8
+        elif f"{sender_name}" == str(text_j): # Sinon, si le nom de l'objet est égal à text_j (un identifiant donné à un slider), alors :
+            liste_pourcentage[9] = int(dosage) # Stocker la valeur de dosage dans la liste_dosage à l'index 9
+        elif f"{sender_name}" == str(text_k): # Sinon, si le nom de l'objet est égal à text_k (un identifiant donné à un slider), alors :
+            liste_pourcentage[10] = int(dosage) # Stocker la valeur de dosage dans la liste_dosage à l'index 10
+        elif f"{sender_name}" == str(text_l): # Sinon, si le nom de l'objet est égal à text_l (un identifiant donné à un slider), alors :
+            liste_pourcentage[11] = int(dosage) # Stocker la valeur de dosage dans la liste_dosage à l'index 11
+        elif f"{sender_name}" == str(text_m): # Sinon, si le nom de l'objet est égal à text_m (un identifiant donné à un slider), alors :
+            liste_pourcentage[12] = int(dosage) # Stocker la valeur de dosage dans la liste_dosage à l'index 12
+        elif f"{sender_name}" == str(text_n): # Sinon, si le nom de l'objet est égal à text_n (un identifiant donné à un slider), alors :
+            liste_pourcentage[13] = int(dosage) # Stocker la valeur de dosage dans la liste_dosage à l'index 13
+        elif f"{sender_name}" == str(text_o): # Sinon, si le nom de l'objet est égal à text_o (un identifiant donné à un slider), alors :
+            liste_pourcentage[14] = int(dosage) # Stocker la valeur de dosage dans la liste_dosage à l'index 14
+        elif f"{sender_name}" == str(text_p): # Sinon, si le nom de l'objet est égal à text_p (un identifiant donné à un slider), alors :
+            liste_pourcentage[15] = int(dosage) # Stocker la valeur de dosage dans la liste_dosage à l'index 15
+        return liste_pourcentage # Renvoie la liste_dosage mise à jour
+
+    def open_page_progress(self):
+        global cocktail
+        cocktail = 1
+        self.page_progress = ProgressBar()  # instanciation d'une nouvelle page ProgressBar
+        self.page_progress.show()  # affiche la page ProgressBar
+        self.hide()  # cache la page actuelle
+    def open_page_accueil(self):
+        self.hide()  # cache la page actuelle, qui est la page accueil
+
+class WorkerThread(QThread):
+    operation_complete = pyqtSignal()  # Custom signal
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.gpio_pin_durations = []
+
+    def run(self):
+        self.code_alcool_broche(self.gpio_pin_durations)
+        self.operation_complete.emit()
+
+    def set_pin_high(self, pin, duration):
+        GPIO.output(pin, 1)  # Set the pin to HIGH
+        time.sleep(duration)  # Wait for the specified duration
+        GPIO.output(pin, 0)  # Set the pin back to LOW
+
+    def allumage_broches_LH(self):
+        # Configure the GPIO pins as outputs and initially set them to LOW
+        for pin, _ in self.gpio_pin_durations:
+            GPIO.setup(int(pin), GPIO.OUT, initial=GPIO.LOW)
+
+        # Create and start the threads for each GPIO pin
+        threads = []
+        for pin, duration in self.gpio_pin_durations:
+            thread = threading.Thread(target=self.set_pin_high, args=(int(pin), int(duration)))
+            thread.start()
+            threads.append(thread)
+
+        # Wait for all threads to finish
+        for thread in threads:
+            thread.join()
+
+    def code_alcool_broche(self, gpio_pin_durations):
+        self.allumage_broches_LH()
+
+class ProgressBar(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.initUI()
+        self.setGeometry(0, -5, 500, 300) # Définit la position et la taille de la fenêtre
+
+    def initUI(self):
+        self.progressbar = QProgressBar(self)
+        self.progressbar.setRange(0, 50)
+        self.progressbar.setValue(0)
+        self.progressbar.setTextVisible(False)
+
+        vbox = QVBoxLayout()
+        vbox.addStretch(1)
+        vbox.addWidget(self.progressbar, alignment=Qt.AlignCenter)
+        vbox.addStretch(1)
+
+        central_widget = QWidget()
+        central_widget.setLayout(vbox)
+        self.setCentralWidget(central_widget)
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.updateProgressBar)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.startOperation()
+
+    def startOperation(self):
+        global cocktail, liste_pourcentage, liste_nom, liste_dose, liste_dosage, count, pompe_number, number_player, temps, BROCHES_POMPES, doses_seconds
+
+        self.timer.start(100)
+        self.progressbar_lock = threading.Lock()
+
+        if cocktail == 1:
+            dose = self.pourcentage_to_dose_cocktail(liste_pourcentage)
+        elif cocktail == 2:
+            dose = self.pourcentage_to_dose_shot(liste_pourcentage)
+        cocktail = 0
+        liste_pourcentage = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        liste_dose = self.mLensecondes(dose)
+        self.worker_thread = WorkerThread(self)
+        self.worker_thread.gpio_pin_durations = self.get_gpio_pin_durations(liste_dose)
+        self.worker_thread.operation_complete.connect(self.onOperationComplete)
+        self.worker_thread.start()
+
+    def get_gpio_pin_durations(self, temps):
+        gpio_pin_durations = []
+
+        for (name, pin), secondes in zip(BROCHES_POMPES.items(), temps):
+            gpio_pin_durations.append((pin, secondes))
+
+        return gpio_pin_durations
+
+    def updateProgressBar(self):
+        global temps, number_player, count
+        
+        max_duration = max(doses_seconds)
+        increment = max_duration / 50  # Calculate the dynamic increment based on the maximum duration
+        
+        current_value = self.progressbar.value() + increment
+        self.progressbar.setValue(current_value)
+    
+        if current_value >= max(doses_seconds) :
+            self.timer.stop()
+            self.progressbar.setValue(0)
+            if number_player == 0 or number_player == count:
+                self.fin2()
+                count = 0
+                number_player = 0
+            else:
+                self.fin1()
+
+    def fin1(self):
+        self.page3 = Page3()
+        self.page3.show()
+        self.hide()
+
+    def fin2(self):
+        self.page_terminer = Terminer()
+        self.page_terminer.show()
+        self.hide()
+
+    def pourcentage_to_dose_shot(self, liste_p):
+        """
+        Convertit une liste de doses en pourcentage en doses en ml.
+        Les doses doivent avoir une somme totale de 100%.
+        """
+        global taille_petit_verre  # Définit la variable taille_petit_verre comme une variable globale
+        liste_ml = []  # Initialise une liste vide pour stocker les doses en ml
+        
+        total_volume = taille_petit_verre  # Utilise taille_petit_verre comme le volume total du verre en ml
+        
+        for pct in liste_p:
+            dose_ml = round(pct / 100 * total_volume, 1)  # Convertit la dose en ml et arrondit à 1 décimale
+            liste_ml.append(dose_ml)  # Ajoute la dose convertie en ml à la liste des doses en ml
+        
+        return liste_ml  # Retourne la liste contenant les doses en ml
+    
+    def pourcentage_to_dose_cocktail(self, liste_pourcentage):
+        """
+        Convertit une liste de doses en pourcentage en doses en ml.
+        Les doses doivent avoir une somme totale de 100%.
+        """
+        global taille_grand_verre  # Définit une variable globale
+        liste_ml_alcool = [] # Initialisation d'une liste qui contiendra les doses d'alcool en ml
+        liste_ml_soft = [] # Initialisation d'une liste qui contiendra les doses de soft en ml
+        liste_total = [] # Initialisation d'une liste qui contiendra toutes les doses en ml
+        print(taille_grand_verre) # Affiche la taille du verre
+        total_dose_alcool = 40  # Définit la somme totale d'une dose d'alcool en mL
+        reste_mL = 0.75 * taille_grand_verre # Calcule le volume restant dans le verre pour le soft
+        dose_sum_pct_alcool = sum(liste_pourcentage[:len(liste_pourcentage)//2]) # Calcule la somme des doses d'alcool en pourcentage
+        liste_pourcentage_alcool = liste_pourcentage[:len(liste_pourcentage)//2].copy() # Copie la liste des doses d'alcool en pourcentage
+        dose_sum_pct_soft = sum(liste_pourcentage[len(liste_pourcentage)//2:]) # Calcule la somme des doses de soft en pourcentage
+        liste_pourcentage_soft = liste_pourcentage[len(liste_pourcentage)//2:].copy() # Copie la liste des doses de soft en pourcentage
+        
+        # Vérifie si la somme des doses d'alcool est égale à 100% ou pas, ajuste les doses en ml si nécessaire
+        if dose_sum_pct_alcool != 100 and dose_sum_pct_alcool !=0: 
+            for pct in liste_pourcentage_alcool:
+                dose_pct = pct / dose_sum_pct_alcool * 100 # Calcule la dose en pourcentage pour chaque ingrédient
+                dose_ml_alcool = round(dose_pct / 100 * total_dose_alcool, 1) # Calcule la dose en mL pour chaque ingrédient
+                liste_ml_alcool.append(dose_ml_alcool) # Ajoute la dose en mL pour chaque ingrédient à la liste d'alcool en mL
+        else:
+            for pct in liste_pourcentage_alcool:
+                dose_ml_alcool = round(pct / 100 * total_dose_alcool, 1) # Calcule la dose en mL pour chaque ingrédient
+                liste_ml_alcool.append(dose_ml_alcool) # Ajoute la dose en mL pour chaque ingrédient à la liste d'alcool en mL
+         
+        if dose_sum_pct_soft != 100 and dose_sum_pct_soft != 0:  # Vérifie si la somme des pourcentages n'est ni 100 ni 0
+            for pct in liste_pourcentage_soft:  # Boucle à travers chaque pourcentage dans la liste de pourcentages soft
+                dose_pct = pct / dose_sum_pct_soft * 100  # Calcule le pourcentage de dose pour chaque pourcentage soft
+                dose_ml_soft = round(dose_pct / 100 * reste_mL, 1)  # Calcule le volume de chaque dose de soft en mL
+                liste_ml_soft.append(dose_ml_soft)  # Ajoute le volume de chaque dose de soft à la liste des volumes de soft
+        else:  # Si la somme des pourcentages est 100 ou 0
+            for pct in liste_pourcentage_soft:  # Boucle à travers chaque pourcentage dans la liste de pourcentages soft
+                dose_ml_soft = round(pct / 100 * reste_mL, 1)  # Calcule le volume de chaque dose de soft en mL
+                liste_ml_soft.append(dose_ml_soft)  # Ajoute le volume de chaque dose de soft à la liste des volumes de soft
+        
+        for i in range(len(liste_ml_alcool)):  # Boucle à travers chaque volume de dose d'alcool dans la liste des volumes d'alcool
+            liste_total.append(liste_ml_alcool[i])  # Ajoute chaque volume de dose d'alcool à la liste des volumes totaux
+        
+        for i in range(len(liste_ml_soft)):  # Boucle à travers chaque volume de dose de soft dans la liste des volumes de soft
+            liste_total.append(liste_ml_soft[i])  # Ajoute chaque volume de dose de soft à la liste des volumes totaux
+        
+        return liste_total  # Retourne la liste des volumes totaux de chaque dose d'alcool et de soft
+    
+    def mLensecondes(self, liste):
+        global doses_seconds
+        doses_seconds = []
+        debit = 110 / 60  # Adjust the flow rate as per your requirement
+        for dose_ml in liste:
+            dose_sec = round(dose_ml / debit, 3)
+            doses_seconds.append(dose_sec)
+        temps = sum(doses_seconds)
+        return doses_seconds
+
+    def onOperationComplete(self):
+        self.timer.stop()
+        self.progressbar_lock.acquire()
+        self.progressbar.setValue(100)
+        self.progressbar_lock.release()
+
+    def closeEvent(self, event):
+        if hasattr(self, 'worker_thread'):
+            if self.worker_thread.isRunning():
+                self.worker_thread.quit()
+                self.worker_thread.wait()
+        event.accept()
+'''
+class ProgressBar(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.initUI()
+        self.setGeometry(0, -5, 500, 300) # Définit la position et la taille de la fenêtre
+
+    def initUI(self):
+        global cocktail, liste_pourcentage,liste_nom, liste_dose, liste_dosage, count, pompe_number, number_player, temps, BROCHES_POMPES, doses_seconds
+
+        # Crée un widget de barre de progression
+        self.progressbar = QProgressBar(self)
+        self.progressbar.setRange(0, 50) # Définit la plage de la barre de progression
+        self.progressbar.setValue(0) # Définit la valeur actuelle de la barre de progression
+        self.progressbar.setTextVisible(False) # Cache le texte de la barre de progression
+
+        # Centre la barre de progression horizontalement
+        vbox = QVBoxLayout()
+        vbox.addStretch(1)
+        vbox.addWidget(self.progressbar, alignment=Qt.AlignCenter)
+        vbox.addStretch(1)
+        
+
+        
+        # Définit le layout principal de la fenêtre
+        central_widget = QWidget()
+        central_widget.setLayout(vbox)
+        self.setCentralWidget(central_widget)
+
+        # Démarre un timer pour mettre à jour la valeur de la barre de progression
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.updateProgressBar)
+        self.timer.start(100)  # Met à jour toutes les 100 millisecondes
+        self.progressbar_lock = threading.Lock()
+        
+        if cocktail == 1:
+            dose = self.pourcentage_to_dose_cocktail(liste_pourcentage) # Convertit la liste des doses de pourcentage en doses en millilitres
+        elif cocktail == 2: 
+            dose = self.pourcentage_to_dose_shot(liste_pourcentage) # Convertit la liste des doses de pourcentage en doses en millilitres
+        cocktail = 0
+        liste_pourcentage = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+        liste_dose = self.mLensecondes(dose) # Convertit la liste des doses en millilitres en une liste de doses en secondes avec un débit de 166 ml/s
+        self.code_alcool_broche(liste_dose)
+        
+        self.progressbar_lock.acquire()
+        self.timer.stop()
+        self.progressbar.setValue(100)
+        self.progressbar_lock.release()
+        
+    def updateProgressBar(self):
+        global temps, number_player, count
+        # Increase the progress bar value
+        with self.progressbar_lock:
+            value = self.progressbar.value() + 5 # increase the progress bar value by 5
+            self.progressbar.setValue(value) # set the progress bar value to the new value
+
+        # Stop the timer and show a message when the progress bar is complete
+        if value >= temps + 50: # if the progress bar value is greater than the given time plus 50
+            self.timer.stop() # stop the timer
+            self.progressbar.setValue(0) # set the progress bar value to 0
+            if number_player == 0 or number_player == count: # if there are no players or if the current player is the last one
+                self.fin2() # call the function fin2
+                count = 0
+                number_player = 0
+            else:
+                self.fin1() # call the function fin1
+                
+    def fin1(self):
+        self.page3 = Page3() # create a new instance of Page3
+        self.page3.show() # show the new instance of Page3
+        self.hide() # hide the current window
+        
+        
+    def fin2(self):
+        self.page_terminer = Terminer() # create a new instance of Terminer
+        self.page_terminer.show() # show the new instance of Terminer
+        self.hide() # hide the current window         
+    
+    def pourcentage_to_dose_shot(self, liste_p):
+        """
+        Convertit une liste de doses en pourcentage en doses en ml.
+        Les doses doivent avoir une somme totale de 100%.
+        """
+        global taille_petit_verre  # Définit la variable taille_petit_verre comme une variable globale
+        liste_ml = []  # Initialise une liste vide pour stocker les doses en ml
+        
+        total_volume = taille_petit_verre  # Utilise taille_petit_verre comme le volume total du verre en ml
+        
+        for pct in liste_p:
+            dose_ml = round(pct / 100 * total_volume, 1)  # Convertit la dose en ml et arrondit à 1 décimale
+            liste_ml.append(dose_ml)  # Ajoute la dose convertie en ml à la liste des doses en ml
+        
+        return liste_ml  # Retourne la liste contenant les doses en ml
+    
+    def pourcentage_to_dose_cocktail(self, liste_pourcentage):
+        """
+        Convertit une liste de doses en pourcentage en doses en ml.
+        Les doses doivent avoir une somme totale de 100%.
+        """
+        global taille_grand_verre  # Définit une variable globale
+        liste_ml_alcool = [] # Initialisation d'une liste qui contiendra les doses d'alcool en ml
+        liste_ml_soft = [] # Initialisation d'une liste qui contiendra les doses de soft en ml
+        liste_total = [] # Initialisation d'une liste qui contiendra toutes les doses en ml
+        print(taille_grand_verre) # Affiche la taille du verre
+        total_dose_alcool = 40  # Définit la somme totale d'une dose d'alcool en mL
+        reste_mL = 0.75 * taille_grand_verre # Calcule le volume restant dans le verre pour le soft
+        dose_sum_pct_alcool = sum(liste_pourcentage[:len(liste_pourcentage)//2]) # Calcule la somme des doses d'alcool en pourcentage
+        liste_pourcentage_alcool = liste_pourcentage[:len(liste_pourcentage)//2].copy() # Copie la liste des doses d'alcool en pourcentage
+        dose_sum_pct_soft = sum(liste_pourcentage[len(liste_pourcentage)//2:]) # Calcule la somme des doses de soft en pourcentage
+        liste_pourcentage_soft = liste_pourcentage[len(liste_pourcentage)//2:].copy() # Copie la liste des doses de soft en pourcentage
+        
+        # Vérifie si la somme des doses d'alcool est égale à 100% ou pas, ajuste les doses en ml si nécessaire
+        if dose_sum_pct_alcool != 100 and dose_sum_pct_alcool !=0: 
+            for pct in liste_pourcentage_alcool:
+                dose_pct = pct / dose_sum_pct_alcool * 100 # Calcule la dose en pourcentage pour chaque ingrédient
+                dose_ml_alcool = round(dose_pct / 100 * total_dose_alcool, 1) # Calcule la dose en mL pour chaque ingrédient
+                liste_ml_alcool.append(dose_ml_alcool) # Ajoute la dose en mL pour chaque ingrédient à la liste d'alcool en mL
+        else:
+            for pct in liste_pourcentage_alcool:
+                dose_ml_alcool = round(pct / 100 * total_dose_alcool, 1) # Calcule la dose en mL pour chaque ingrédient
+                liste_ml_alcool.append(dose_ml_alcool) # Ajoute la dose en mL pour chaque ingrédient à la liste d'alcool en mL
+         
+        if dose_sum_pct_soft != 100 and dose_sum_pct_soft != 0:  # Vérifie si la somme des pourcentages n'est ni 100 ni 0
+            for pct in liste_pourcentage_soft:  # Boucle à travers chaque pourcentage dans la liste de pourcentages soft
+                dose_pct = pct / dose_sum_pct_soft * 100  # Calcule le pourcentage de dose pour chaque pourcentage soft
+                dose_ml_soft = round(dose_pct / 100 * reste_mL, 1)  # Calcule le volume de chaque dose de soft en mL
+                liste_ml_soft.append(dose_ml_soft)  # Ajoute le volume de chaque dose de soft à la liste des volumes de soft
+        else:  # Si la somme des pourcentages est 100 ou 0
+            for pct in liste_pourcentage_soft:  # Boucle à travers chaque pourcentage dans la liste de pourcentages soft
+                dose_ml_soft = round(pct / 100 * reste_mL, 1)  # Calcule le volume de chaque dose de soft en mL
+                liste_ml_soft.append(dose_ml_soft)  # Ajoute le volume de chaque dose de soft à la liste des volumes de soft
+        
+        for i in range(len(liste_ml_alcool)):  # Boucle à travers chaque volume de dose d'alcool dans la liste des volumes d'alcool
+            liste_total.append(liste_ml_alcool[i])  # Ajoute chaque volume de dose d'alcool à la liste des volumes totaux
+        
+        for i in range(len(liste_ml_soft)):  # Boucle à travers chaque volume de dose de soft dans la liste des volumes de soft
+            liste_total.append(liste_ml_soft[i])  # Ajoute chaque volume de dose de soft à la liste des volumes totaux
+        
+        return liste_total  # Retourne la liste des volumes totaux de chaque dose d'alcool et de soft
+    
+    def mLensecondes(self, liste):
+        global doses_seconds
+        doses_seconds = []
+        debit = 110 / 60  # Adjust the flow rate as per your requirement
+        for dose_ml in liste:
+            dose_sec = round(dose_ml / debit, 3)
+            doses_seconds.append(dose_sec)
+        temps = sum(doses_seconds)
+        return doses_seconds
+
+    def allumage_broches_LH(self, gpio_pin_durations):
+        def set_pin_high(pin, duration):
+            GPIO.output(pin, 1)  # Set the pin to HIGH
+            time.sleep(duration)  # Wait for the specified duration
+            GPIO.output(pin, 0)  # Set the pin back to LOW
+    
+        # Configure the GPIO pins as outputs and initially set them to LOW
+        for pin, _ in gpio_pin_durations:
+            GPIO.setup(int(pin), GPIO.OUT, initial=GPIO.LOW)
+    
+        # Create and start the threads for each GPIO pin
+        threads = []
+        for pin, duration in gpio_pin_durations:
+            thread = threading.Thread(target=set_pin_high, args=(int(pin), int(duration)))
+            thread.start()
+            threads.append(thread)
+    
+        # Wait for all threads to finish
+        for thread in threads:
+            thread.join()
+        return
+    
+    def code_alcool_broche(self, temps):
+        gpio_pin_durations = []
+    
+        for (name, pin), secondes in zip(BROCHES_POMPES.items(), temps):
+            gpio_pin_durations.append((pin, secondes))
+    
+        self.allumage_broches_LH(gpio_pin_durations)
+        return
+'''
+class Terminer(QMainWindow):
+    def __init__(self):
+        global liste_dosage  # Make the variable liste_dosage global
+        super().__init__()  # Call the superclass constructor
+        self.setWindowTitle("Terminer")  # Set the title of the main window
+        self.setGeometry(0, -5, 500, 300)  # Set the position and size of the main window
+        self.reset_dosage()  # Call the reset_dosage method to reset the global variable liste_dosage
+        self.create_widgets()  # Call the create_widgets method to create the widgets in the main window
+
+    def create_widgets(self):
+        vbox = QVBoxLayout()  # Create a vertical layout
+        ligne = QHBoxLayout()  # Create a horizontal layout
+        self.label = QLabel("Votre cocktail est prêt ", self)  # Create a label with the given text
+        self.label.setAlignment(Qt.AlignCenter)  # Set the alignment of the label
+        self.label.move(175,100)  # Move the label to the specified position
+        self.label.adjustSize()  # Adjust the size of the label to fit the text
+        
+        self.button_confirmation = QPushButton("Confirmer", self)  # Create a button with the given text
+        self.button_confirmation.clicked.connect(self.open_page_accueil)  # Connect the button to the open_page_accueil method
+        self.button_confirmation.setStyleSheet("text-align:center;")  # Set the style sheet of the button
+        self.button_confirmation.move(185,200)  # Move the button to the specified position
+        ligne.addWidget(self.button_confirmation)  # Add the button to the horizontal layout
+        ligne.setAlignment(Qt.AlignRight)  # Set the alignment of the horizontal layout
+        
+        vbox.addWidget(self.label)  # Add the label to the vertical layout
+        vbox.addLayout(ligne)  # Add the horizontal layout to the vertical layout
+    
+    def open_page_accueil(self):
+        self.hide()  # Hide the main window when the button is clicked
+        
+    def reset_dosage(self):
+        global liste_dosage  # Access the global variable liste_dosage
+        liste_pourcentage = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]  # Reset the global variable to a list of zeroes
+
+class HexagonalButton_BeeVirgin(QPushButton):
+    def __init__(self, parent=None, radius = 2, text=''):
+        # Call the constructor of the base class QPushButton
+        super(HexagonalButton_BeeVirgin, self).__init__(parent)
+        # Set the style sheet for the button
+        self.setStyleSheet("background-color: #FFE900;")
+        # Set the radius of the button
+        self.radius = radius
+        # Set the minimum and maximum size of the button based on the radius
+        self.setMinimumSize(QSize(3 * self.radius, 3 * self.radius))
+        self.setMaximumSize(QSize(2 * self.radius, 2 * self.radius))
+        # Set the mask of the button to a hexagon shape
+        self.setMask(self.hex_mask())
+        # Create a label widget to display the text on the button
+        self.label = QLabel(text, self)
+        # Set the alignment of the label to center
+        self.label.setAlignment(Qt.AlignCenter)
+        # Set the style sheet for the label
+        self.label.setStyleSheet("color: black;")
+        # Create a QFont object to set the font for the label
+        self.font = QFont()
+        self.font.setPointSize(10)
+        # Set the font for the label
+        self.label.setFont(self.font)
+        # Adjust the size of the label to fit the text
+        self.label.adjustSize()
+        # Center the label on the button
+        self.label.move(self.radius - self.label.width() / 2, self.radius - self.label.height() / 2)
+
+    def mousePressEvent(self, event):
+        # Call the base class method for the mousePressEvent
+        super().mousePressEvent(event)
+        # Create an instance of the Page_soft_Beethirsty widget
+        self.page_soft = Page_soft_Beethirsty()
+        # Show the widget
+        self.page_soft.show()
+
+    def hex_mask(self):
+        # Create a QPainterPath object to draw the hexagon
+        path = QPainterPath()
+        # Loop through the 6 vertices of the hexagon
+        for i in range(6):
+            angle_deg = 60 * i
+            angle_rad = math.pi / 180 * angle_deg
+            # Calculate the x and y coordinates of the vertex
+            x = self.radius + self.radius * math.cos(angle_rad)
+            y = self.radius + self.radius * math.sin(angle_rad)
+            # If it is the first vertex, move to that position
+            if i == 0:
+                path.moveTo(x, y)
+            # For the remaining vertices, draw a line to the position
+            else:
+                path.lineTo(x, y)
+        # Close the path to complete the hexagon shape
+        path.closeSubpath()
+        # Create a region based on an ellipse shape
+        region = QRegion(QRect(0, 0, 2 * self.radius, 2 * self.radius), QRegion.Ellipse)
+        # Intersect the ellipse region with the hexagon shape region
+        region = region.intersected(QRegion(path.toFillPolygon().toPolygon()))
+        # Return the final region as the mask for the button
+        return region
+
+class HexagonalButton_BeeShot(QPushButton):
+    def __init__(self, parent=None, radius = 2, text=''):
+        super(HexagonalButton_BeeShot, self).__init__(parent)
+        self.setStyleSheet("background-color: #FFE900;")  # Définit la couleur de fond du bouton
+        self.radius = radius  # Définit le rayon du bouton
+        self.setMinimumSize(QSize(3 * self.radius, 3 * self.radius))  # Définit la taille minimale du bouton
+        self.setMaximumSize(QSize(2 * self.radius, 2 * self.radius))  # Définit la taille maximale du bouton
+        self.setMask(self.hex_mask())  # Applique un masque hexagonal sur le bouton
+        # Ajoute un texte dans le bouton
+        self.label = QLabel(text, self)
+        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setStyleSheet("color: black;")
+        self.font = QFont()
+        self.font.setPointSize(10)
+        self.label.setFont(self.font)
+        self.label.adjustSize()
+        self.label.move(self.radius - self.label.width() / 2, self.radius - self.label.height() / 2)
+
+    def mousePressEvent(self, event):
+        # Appelle la méthode de la classe de base
+        super().mousePressEvent(event)
+        # Affiche la page d'alcool shot lorsque le bouton est cliqué
+        self.page_alcool = Page_alcool_shot()
+        self.page_alcool.show()
+
+        
+    def hex_mask(self):
+        path = QPainterPath() # Créer un QPainterPath vide pour stocker le chemin
+        for i in range(6): # Boucle pour tracer les 6 côtés du hexagone
+            angle_deg = 60 * i # Calcule l'angle en degrés pour le côté actuel
+            angle_rad = math.pi / 180 * angle_deg # Convertit l'angle en radians
+            x = self.radius + self.radius * math.cos(angle_rad) # Calcule la position x du point sur le côté
+            y = self.radius + self.radius * math.sin(angle_rad) # Calcule la position y du point sur le côté
+            if i == 0: # Si c'est le premier point, déplacer le curseur au point
+                path.moveTo(x, y)
+            else: # Sinon, tracer une ligne jusqu'au point
+                path.lineTo(x, y)
+        path.closeSubpath() # Fermer le chemin pour former le hexagone
+        region = QRegion(QRect(0, 0, 2 * self.radius, 2 * self.radius), QRegion.Ellipse) # Créer une région circulaire pour définir la forme de l'élément masqué
+        region = region.intersected(QRegion(path.toFillPolygon().toPolygon())) # Intersecte la région circulaire avec le hexagone pour obtenir la région finale à masquer
+        return region # Renvoie la région à masquer
+
+class Page_alcool_shot(QWidget):
+    # This class defines a QWidget for choosing the amount of alcohol in a shot
+    # The __init__() method initializes the class
+    def __init__(self):
+        super().__init__()
+        # Calls the initUI() method to set up the GUI
+        self.initUI()
+
+    # The initUI() method sets up the GUI
+    def initUI(self):
+        # The following global variables are used throughout the code
+        global text_a, text_b, text_c, text_d, text_e, text_f, text_g, text_h, liste_nom, liste_dosage, taille_petit_verre, liste_pourcentage
+        text_a = liste_nom[0] # Assign the first element of the list "liste_nom" to the variable "text_a"
+        text_b = liste_nom[1] # Assign the second element of the list "liste_nom" to the variable "text_b"
+        text_c = liste_nom[2] # Assign the third element of the list "liste_nom" to the variable "text_c"
+        text_d = liste_nom[3] # Assign the fourth element of the list "liste_nom" to the variable "text_d"
+        text_e = liste_nom[4] # Assign the fifth element of the list "liste_nom" to the variable "text_e"
+        text_f = liste_nom[5] # Assign the sixth element of the list "liste_nom" to the variable "text_f"
+        text_g = liste_nom[6] # Assign the seventh element of the list "liste_nom" to the variable "text_g"
+        text_h = liste_nom[7] # Assign the eighth element of the list "liste_nom" to the variable "text_h"
+        
+        # Crée une zone de défilement
+        self.scroll = QScrollArea(self)
+        
+        # Permet de redimensionner le widget à l'intérieur de la zone de défilement
+        self.scroll.setWidgetResizable(True)
+        
+        # Ajoute une barre de défilement verticale à la zone de défilement
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        
+        # Crée un widget pour contenir le contenu de la zone de défilement
+        content_widget = QWidget(self.scroll)
+        
+        # Définit le widget précédemment créé comme le widget contenu de la zone de défilement
+        self.scroll.setWidget(content_widget)
+        
+        # Crée un layout vertical pour le widget contenu
+        vbox = QVBoxLayout(content_widget)
+        
+        # Crée des layouts horizontaux pour chaque ligne de contenu
+        ligne1 = QHBoxLayout()
+        ligne2 = QHBoxLayout()
+        ligne3 = QHBoxLayout()
+        ligne4 = QHBoxLayout()
+        ligne5 = QHBoxLayout()
+        ligne6 = QHBoxLayout()
+        
+        # Create a QLabel object with the text "Choose your alcohol"
+        label = QLabel("Choose your alcohol", self)
+        label.setAlignment(Qt.AlignCenter) # Align the label to the center of its layout
+        
+        ligne1.addWidget(label) # Add the label to the first QHBoxLayout object named "ligne1"
+        if text_a != "":
+            self.hexagon_label2_1 = HexagonLabel(self) # Create a new instance of HexagonLabel
+            slider2_1 = QSlider(self) # and QSlider widgets and set their names
+            slider2_1.setObjectName(text_a)
+            self.hexagon_label2_1.slider_name = slider2_1.objectName() # Set the slider name as an attribute of the HexagonLabel widget
+            ligne2.addWidget(self.hexagon_label2_1) # Add the HexagonLabel and QSlider widgets to the second line of the layout
+            slider2_1.setOrientation(Qt.Horizontal)
+            slider2_1.setRange(0, 100)
+            slider2_1.sliderReleased.connect(self.sliderReleased_alcool)
+            ligne2.addWidget(slider2_1)
+        if text_b != "":
+            self.hexagon_label2_2 = HexagonLabel(self) # Create a new instance of HexagonLabel
+            slider2_2 = QSlider(self)  # and QSlider widgets and set their names
+            slider2_2.setObjectName(text_b)
+            self.hexagon_label2_2.slider_name = slider2_2.objectName() # Set the slider name as an attribute of the HexagonLabel widget
+            ligne2.addWidget(self.hexagon_label2_2) # Add the HexagonLabel and QSlider widgets to the second line of the layout
+            slider2_2.setOrientation(Qt.Horizontal)
+            slider2_2.setRange(0, 100)
+            slider2_2.sliderReleased.connect(self.sliderReleased_alcool)
+            ligne2.addWidget(slider2_2)
+        if text_c != "":
+            self.hexagon_label3_1 = HexagonLabel(self)  # Crée un nouveau label hexagonal pour la ligne 3
+            slider3_1 = QSlider(self)  # Crée un nouveau curseur pour la ligne 3
+            slider3_1.setObjectName(text_c)  # Définit le nom de l'objet du curseur à la valeur de la variable text_c
+            self.hexagon_label3_1.slider_name = slider3_1.objectName()  # Assigne le nom de l'objet du curseur à l'attribut slider_name du label hexagonal
+            ligne3.addWidget(self.hexagon_label3_1)  # Ajoute le label hexagonal à la ligne 3
+            slider3_1.setOrientation(Qt.Horizontal)  # Définit l'orientation du curseur à horizontale
+            slider3_1.setRange(0, 100)  # Définit la plage de valeurs du curseur de 0 à 100
+            slider3_1.sliderReleased.connect(self.sliderReleased_alcool)  # Connecte le signal sliderReleased du curseur à la méthode sliderReleased_alcool
+            ligne3.addWidget(slider3_1)  # Ajoute le curseur à la ligne 3
+        if text_d != "":
+            self.hexagon_label3_2 = HexagonLabel(self)  # Crée un nouveau label hexagonal pour la ligne 3
+            slider3_2 = QSlider(self)  # Crée un nouveau curseur pour la ligne 3
+            slider3_2.setObjectName(text_d)  # Définit le nom de l'objet du curseur à la valeur de la variable text_d
+            self.hexagon_label3_2.slider_name = slider3_2.objectName()  # Assigne le nom de l'objet du curseur à l'attribut slider_name du label hexagonal
+            ligne3.addWidget(self.hexagon_label3_2)  # Ajoute le label hexagonal à la ligne 3
+            slider3_2.setOrientation(Qt.Horizontal)  # Définit l'orientation du curseur à horizontale
+            slider3_2.setRange(0, 100)  # Définit la plage de valeurs du curseur de 0 à 100
+            slider3_2.sliderReleased.connect(self.sliderReleased_alcool)  # Connecte le signal sliderReleased du curseur à la méthode sliderReleased_alcool
+            ligne3.addWidget(slider3_2)  # Ajoute le curseur à la ligne 3
+        if text_e != "":
+            self.hexagon_label4_1 = HexagonLabel(self)  # create a HexagonLabel widget and store it in self.hexagon_label4_1
+            slider4_1 = QSlider(self)  # create a QSlider widget and store it in slider4_1
+            slider4_1.setObjectName(text_e)  # set the object name of slider4_1 to the value of text_e
+            self.hexagon_label4_1.slider_name = slider4_1.objectName()  # set the slider_name attribute of self.hexagon_label4_1 to the object name of slider4_1
+            ligne4.addWidget(self.hexagon_label4_1)  # add self.hexagon_label4_1 to the QHBoxLayout widget ligne4
+            slider4_1.setOrientation(Qt.Horizontal)  # set the orientation of slider4_1 to horizontal
+            slider4_1.setRange(0, 100)  # set the range of slider4_1 from 0 to 100
+            slider4_1.sliderReleased.connect(self.sliderReleased_alcool)  # connect the sliderReleased signal of slider4_1 to the sliderReleased_alcool slot of the current object
+            ligne4.addWidget(slider4_1)  # add slider4_1 to the QHBoxLayout widget ligne4
+        if text_f != "":
+            self.hexagon_label4_2 = HexagonLabel(self)  # create a HexagonLabel widget and store it in self.hexagon_label4_2
+            slider4_2 = QSlider(self)  # create a QSlider widget and store it in slider4_2
+            slider4_2.setObjectName(text_f)  # set the object name of slider4_2 to the value of text_f
+            self.hexagon_label4_2.slider_name = slider4_2.objectName()  # set the slider_name attribute of self.hexagon_label4_2 to the object name of slider4_2
+            ligne4.addWidget(self.hexagon_label4_2)  # add self.hexagon_label4_2 to the QHBoxLayout widget ligne4
+            slider4_2.setOrientation(Qt.Horizontal)  # set the orientation of slider4_2 to horizontal
+            slider4_2.setRange(0, 100)  # set the range of slider4_2 from 0 to 100
+            slider4_2.sliderReleased.connect(self.sliderReleased_alcool)  # connect the sliderReleased signal of slider4_2 to the sliderReleased_alcool slot of the current object
+            ligne4.addWidget(slider4_2)  # add slider4_2 to the QHBoxLayout widget ligne4
+        if text_g != "":
+            self.hexagon_label5_1 = HexagonLabel(self)  # create a HexagonLabel widget and store it in self.hexagon_label5_1
+            slider5_1 = QSlider(self)  # create a QSlider widget and store it in slider5_1
+            slider5_1.setObjectName(text_g)  # set the object name of slider5_1 to the value of text_g
+            self.hexagon_label5_1.slider_name = slider5_1.objectName()  # set the slider_name attribute of self.hexagon_label5_1 to the object name of slider5_1
+            ligne5.addWidget(self.hexagon_label5_1)  # add self.hexagon_label5_1 to the QHBoxLayout widget ligne5
+            slider5_1.setOrientation(Qt.Horizontal)  # set the orientation of slider5_1 to horizontal
+            slider5_1.setRange(0, 100)  # set the range of slider5_1 from 0 to 100
+            slider5_1.sliderReleased.connect(self.sliderReleased_alcool) 
+            ligne5.addWidget(slider5_1)  # add the slider to the fifth row of the grid layout
+        if text_h != "":
+            self.hexagon_label5_2 = HexagonLabel(self)  # create a new instance of HexagonLabel
+            slider5_2 = QSlider(self)  # create a new instance of QSlider
+            slider5_2.setObjectName(text_h)  # set the object name of the slider to the text in variable text_f
+            self.hexagon_label5_2.slider_name = slider5_2.objectName()  # set the slider_name attribute of the HexagonLabel instance to the object name of the slider
+            ligne5.addWidget(self.hexagon_label5_2)  # add the HexagonLabel instance to the fifth row of the grid layout
+            slider5_2.setOrientation(Qt.Horizontal)  # set the orientation of the slider to horizontal
+            slider5_2.setRange(0, 100)  # set the minimum and maximum values of the slider to 0 and 100, respectively
+            slider5_2.sliderReleased.connect(self.sliderReleased_alcool)  # connect the sliderReleased signal of the slider to the sliderReleased_alcool slot of the class
+            ligne5.addWidget(slider5_2)  # add the slider to the fifth row of the grid layout
+        
+        self.button_confirmation = QPushButton("Confirm", self)  # create a new instance of QPushButton with "Confirm" as the label
+        self.button_confirmation.setStyleSheet("text-align:center;")  # set the style sheet of the button to center the text
+        self.button_confirmation.clicked.connect(self.open_page_progress_bar)  # connect the clicked signal of the button to the open_page_progress_bar slot of the class
+        self.button_cancel = QPushButton("Cancel", self)  # create a new instance of QPushButton with "Cancel" as the label
+        self.button_cancel.clicked.connect(self.open_page_accueil)  # connect the clicked signal of the button to the open_page_accueil slot of the class
+        self.button_cancel.setStyleSheet("text-align:center;")  # set the style sheet of the button to center the text
+    
+        ligne6.addWidget(self.button_cancel)  # add the Cancel button to the sixth row of the grid layout
+        ligne6.addWidget(self.button_confirmation)  # add the Confirm button to the sixth row of the grid layout
+        ligne6.setAlignment(Qt.AlignRight)  # align the sixth row of the grid layout to the right
+               
+        # Add each layout to the vertical box layout
+        vbox.addLayout(ligne1)
+        vbox.addLayout(ligne2)
+        vbox.addLayout(ligne3)
+        vbox.addLayout(ligne4)
+        vbox.addLayout(ligne5)
+        vbox.addLayout(ligne6)
+        
+        # Set the content widget's layout to the vertical box layout
+        content_widget.setLayout(vbox)
+        
+        # Create a vertical box layout for the main layout
+        main_layout = QVBoxLayout(self)
+        
+        # Add the scroll area to the main layout
+        main_layout.addWidget(self.scroll)
+        
+        # Set the main layout to be the layout for the window
+        self.setLayout(main_layout)
+        
+        # Set the window geometry and title, and show the window
+        self.setGeometry(0, -5, 500, 300)
+        self.setWindowTitle('Hexagon and Slider')
+        self.show()
+
+        
+    def sliderReleased_alcool(self):
+        
+        # Get the object name of the slider which was released
+        sender_name = self.sender().objectName()
+        
+        # Get the dosage value from the slider
+        dosage = self.sender().value()
+        
+        # Update the dosage value in the corresponding index of the 'liste_dosage' list
+        if f"{sender_name}" == str(text_a):
+            liste_pourcentage[0] = int(dosage)
+        elif f"{sender_name}" == str(text_b):
+            liste_pourcentage[1] = int(dosage)
+        elif f"{sender_name}" == str(text_c):
+            liste_pourcentage[2] = int(dosage)
+        elif f"{sender_name}" == str(text_d):
+            liste_pourcentage[3] = int(dosage)
+        elif f"{sender_name}" == str(text_e):
+            liste_pourcentage[4] = int(dosage)
+        elif f"{sender_name}" == str(text_f):
+            liste_pourcentage[5] = int(dosage)
+        elif f"{sender_name}" == str(text_g):
+            liste_pourcentage[6] = int(dosage)
+        elif f"{sender_name}" == str(text_h):
+            liste_pourcentage[7] = int(dosage)
+        
+        # Return the updated 'liste_dosage'
+        return liste_pourcentage
+    
+    def open_page_progress_bar(self):
+        """
+        Ouvre une nouvelle page ProgressBar et convertit la liste des doses de pourcentage en millilitres et en secondes.
+        """
+        global cocktail
+        cocktail = 2
+        self.page_progress = ProgressBar() # Crée une instance de la classe ProgressBar
+        self.page_progress.show() # Affiche la page ProgressBar
+        self.hide() # Masque la page précédente
+
+    
+    def open_page_accueil(self):
+        # Cette fonction masque la page courante de l'application et affiche la page d'accueil.
+        self.hide()
+        
+class Accueil(QMainWindow):
+    def __init__(self):
+        super().__init__()
+
+        # Définition du titre de la fenêtre et de sa taille
+        self.setWindowTitle("Home")
+        self.setGeometry(0, -5, 500, 75)
+
+        # Définition de la feuille de style de la fenêtre
+        self.setStyleSheet("background-color: #63666A;")
+        # Création d'un layout en grille pour les boutons hexagonaux personnalisés
+        layout = QGridLayout()
+
+        # Ajout des boutons hexagonaux personnalisés
+        layout.addWidget(HexagonalButton_BeeVirgin(self, radius=50, text='BeeVirgin'), 1, 0)
+        layout.addWidget(HexagonalButton_BeeThirsty(self, radius=50, text='BeeThirsty'), 1, 1)
+        layout.addWidget(HexagonalButton_BeeShot(self, radius=50, text='BeeShot'), 1, 2)
+        layout.addWidget(HexagonalButton_BeeArsty(self, radius=50, text='BeeArsty'), 2, 0)
+        layout.addWidget(HexagonalButton_BeeBuzz(self, radius=50, text='BeeBuzz'), 2, 1)
+        layout.addWidget(HexagonalButton_settings(self, radius=50, text='Setting'), 2, 2)
+
+        # Création d'un bouton caché qui sera utilisé pour activer la fonctionnalité "Easter Egg"
+        self.hidden_button = QPushButton(self)
+        self.hidden_button.setStyleSheet("background-color: transparent; border: none;")
+        self.hidden_button.clicked.connect(self.open_EasterEgg)
+        layout.addWidget(self.hidden_button, 3, 0)
+
+        # Définition du widget central de la fenêtre
+        widget = QWidget()
+        widget.setLayout(layout)
+        self.setCentralWidget(widget)
+
+    def open_EasterEgg(self):
+        # Fonction pour ouvrir la fenêtre "Easter Egg"
+        self.EasterEgg = EasterEgg()
+        self.EasterEgg.show()
+
+    def reset_dosage(self):
+        # Fonction pour réinitialiser le dosage
+        liste_pourcentage = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    
+    
+
+# On vérifie s'il existe déjà une instance de l'application QCoreApplication
+# Si c'est le cas, on la récupère. Sinon, on crée une nouvelle instance de QApplication avec les arguments du script
+app = QCoreApplication.instance()
+if app is None:
+    app = QApplication(sys.argv)
+window = Accueil() # On crée une nouvelle instance de la fenêtre Accueil
+window.show() # On affiche la fenêtre
+app.exec_() # On lance l'application, la boucle de gestion des événements démarre ici
+GPIO.cleanup() # On nettoie les broches GPIO avant de quitter le programme
